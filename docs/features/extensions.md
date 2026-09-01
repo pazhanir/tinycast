@@ -161,6 +161,14 @@ screens hold (see [palette.md](palette.md)).
   whole signal. `ExtensionScreen.Item`
   carries both the flat `selection` index and the scroll id, and is the `ForEach` identity of the row
   and the grid cell alike — see the scroll-id rule in [ui.md](../ui.md#rows-selection-hover).
+- **Grid tiles** — `ExtensionGridLayout` reads the `Grid`'s `columns`, `aspectRatio`, `fit` and `inset`
+  and is the one place tile geometry is decided. A tile is a column wide and `aspectRatio` tall, and its
+  content is scaled to that tile rather than drawn at an icon size, which is what makes an image-heavy
+  grid (GIFs, logos) look as it does in Raycast; `inset` is the extension's own knob for pulling small
+  artwork back in, so **never compensate for a too-large tile by clamping the content**. The grid is
+  measured once for every cell — a tile that measured itself would cost a layout pass each. A symbol or
+  glyph has no artwork to scale, so it takes a share of the tile; `Grid.Section` props are not read,
+  since the grid draws one column count throughout.
 - **Detail** — markdown rendered block-by-block (headings, lists, code fences, quotes, rules, fetched
   and inline images) with `AttributedString` handling inline styling, plus `Detail.Metadata`.
 - **Appearance** — `environment.appearance` reports the real one, so an extension that branches on it
@@ -381,9 +389,17 @@ would launch Raycast itself.
 
 **Node built-ins** — `path`, `fs` (+ `fs/promises`), `os`, `child_process` (`exec`, `execFile`,
 `execSync`, `execFileSync`, `spawnSync`, and a buffered `spawn`), `crypto` (hashes, HMAC, random,
-UUID), `zlib` (gzip/zlib/raw deflate, both directions), `util`, `events`, `buffer`, `url`,
-`querystring`, `punycode`, `assert`, `string_decoder`, `timers`. Every other built-in resolves to a
-stub that throws only when used, so a bundle that merely references `dgram` or `http2` still loads.
+UUID), `zlib` (gzip/zlib/raw deflate, both directions), `http`/`https` (`request` and `get`, buffered
+over the same URLSession bridge as `fetch`), `stream` (`Stream`, `PassThrough`, `pipeline`), `util`,
+`events`, `buffer`, `url`, `querystring`, `punycode`, `assert`, `string_decoder`, `timers`. Every
+other built-in resolves to a stub that throws only when used, so a bundle that merely references
+`dgram` or `http2` still loads.
+
+A bundle that ships its own HTTP client rather than calling `fetch` — node-fetch travels inside
+`@raycast/utils`, and axios has a Node adapter — reaches the network through `http.request`, so the
+shim answers it: one request when the body ends, one response chunk when the bridge replies. The
+transport decodes for us, so the response drops `content-encoding` and `content-length` rather than
+have the client gunzip plaintext.
 
 **Bundled Swift helpers** — an extension that imports `swift:../swift/<package>` ships the compiled
 Mach-O in `assets/`, and the wrapper Raycast generates chmods it to `755` before spawning it. Store
@@ -408,8 +424,8 @@ OAuth extensions it excluded are not counted yet — re-measure before quoting t
 | **WebSocket** | No polyfill yet; `URLSessionWebSocketTask` could back one. |
 | **Aborting a `fetch` already in flight** | `AbortSignal` is complete — `timeout`, `abort` and `any` included — and `fetch` checks it on both sides of the host call, so a caller gets its `AbortError`. The request itself still runs to completion: the signal isn't carried across the bridge, so nothing cancels the `URLSessionTask`. A timeout bounds the caller, not the network. |
 | **Streaming `child_process.spawn`** | `spawn` runs the child to completion and emits its output as one chunk (async-iterable, which is what `get-stream`/`execa` consume). True duplex streaming would need a bidirectional channel across the bridge. Extensions built on `execa`'s deeper stream API can still fail. |
-| **`http` / `https` / `net` / `tls`** | Resolve but throw on use. `fetch` is the supported path; `axios`'s Node adapter is not. |
-| **`stream`** | Only `PassThrough` and `pipeline` are real — enough for `@raycast/utils`' `useExec`, which pipes a child's stdout through them. The rest of the module still throws. |
+| **`net` / `tls`** | Resolve but throw on use. Nothing bridges a socket. |
+| **Streaming HTTP** | `http.request` sends when the body ends and delivers the response in one chunk, so progress, backpressure and server-sent events are out of reach. `stream` itself is real enough to carry that — `Stream`, `PassThrough`, `pipeline`, async iteration — and the rest of the module still throws. |
 | **Tool/AI-extension entry points (`tools/`)** | Not surfaced. |
 
 ## Working on the runtime
