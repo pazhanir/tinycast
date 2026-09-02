@@ -17,6 +17,8 @@ settings:
     # Create it once — see docs/signing.md.
     CODE_SIGN_IDENTITY: "Tinycast Self-Signed"
     ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_PREVIEWS: NO
+    ENABLE_XOJIT_PREVIEWS: NO
     SWIFT_STRICT_CONCURRENCY: complete
   configs:
     Release:
@@ -35,6 +37,8 @@ targets:
       # The MIT mark's licence asks the notice to travel with the binary, not just the repo.
       - path: NOTICE.md
         buildPhase: resources
+    dependencies:
+      - sdk: AppKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tinycast.app

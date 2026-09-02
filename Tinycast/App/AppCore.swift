@@ -450,7 +450,7 @@ final class AppCore {
 
         AIToolRegistry.shared.extensionToolsProvider = { [weak self] in
             guard let self else { return [] }
-            var definitions: [AIToolDefinition] = []
+            var definitions: [AITool] = []
 
             for ext in self.extensions.installed {
                 guard self.settings.isAIToolEnabled(extensionName: ext.manifest.name) else {
@@ -458,19 +458,30 @@ final class AppCore {
                 }
 
                 for tool in ext.manifest.tools {
-                    let parameters = tool.with.map { param in
-                        AIToolParameter(
-                            name: param.name,
-                            type: param.type ?? "string",
-                            description: param.description ?? param.title ?? param.name,
-                            isRequired: param.required ?? false
-                        )
+                    var properties: [String: Any] = [:]
+                    var required: [String] = []
+                    for param in tool.with {
+                        properties[param.name] = [
+                            "type": param.type ?? "string",
+                            "description": param.description ?? param.title ?? param.name
+                        ]
+                        if param.required == true {
+                            required.append(param.name)
+                        }
                     }
 
-                    let def = AIToolDefinition(
+                    let parameters = JSONValue([
+                        "type": "object",
+                        "properties": properties,
+                        "required": required
+                    ] as [String: Any])
+
+                    let def = AITool(
                         name: tool.name,
                         description: "[\(ext.title)] \(tool.description)",
-                        parameters: parameters
+                        parameters: parameters,
+                        origin: ext.title,
+                        title: tool.title ?? tool.name
                     )
                     definitions.append(def)
                 }
@@ -526,18 +537,18 @@ final class AppCore {
                     let output = try await self.extensions.executeTool(
                         extensionName: ext.manifest.name,
                         toolName: tool.name,
-                        argumentsJSON: call.argumentsJSON
+                        argumentsJSON: call.arguments
                     )
                     return AIToolResult(
                         callID: call.id,
-                        name: call.name,
-                        output: output
+                        content: output,
+                        isError: false
                     )
                 } catch {
                     return AIToolResult(
                         callID: call.id,
-                        name: call.name,
-                        output: "Error executing \(tool.name): \(error.localizedDescription)"
+                        content: "Error executing \(tool.name): \(error.localizedDescription)",
+                        isError: true
                     )
                 }
             }
