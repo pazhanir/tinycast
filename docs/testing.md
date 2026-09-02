@@ -104,6 +104,15 @@ If a change touches anything in the right column, the harness on the left is man
 | `backup-archive-test` | all of `Backup/Model/`, plus `Backup/Service/BackupStaging.swift` |
 | `updates-test` | `Updates/Model/` — version precedence, channel filtering, install route, readiness |
 | `support-test` | `Support/Model/` — when the support reminder comes due, and a clock moved backwards |
+| `mcp-test` | `MCP/Model/` and `MCPSettingsStore` — JSON-RPC framing, handles, tool names, output flattening, trust, `@server` addressing |
+| `mcp-stdio-test` | `MCP/Service/` against a stub server — handshake, listing, calling, and every way one can go away |
+
+The two harnesses that need a server to talk to bring their own: `Tests/ai-fixtures/codex-stub.js`
+and `mcp-stub.js`, each copied into a scratch directory and put in front of PATH so the locator finds
+it the way it would find a real one. Both read fd 0 synchronously rather than through a stream —
+`codex-stub.js` stalls mid-turn on purpose, and an event loop would read the next line while it is
+still holding — and both write with `fs.writeSync`, so a reply is on the pipe before a mode that
+exits does.
 
 A harness that passed before a change passes after it. There is no "I'll fix it next commit" and no
 commenting out a case. If a change genuinely invalidates an assertion, the assertion is rewritten in the
@@ -372,12 +381,16 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 - Adding or deleting an event in Calendar.app updates an open palette without a reopen
 - A meeting with no link is listed and searchable, and answers Open in Calendar rather than Join
 - Import a backup taken with Calendar on: it comes back **off**, and no calendar toggle travels
-- Menu bar on Never: the item is the plain icon; on 5 minutes the title and countdown appear at T-5
-  and step on the minute boundary, not on a keystroke
+- Calendar in Menu Bar on Disabled: the calendar item is gone and Tinycast's own item is unaffected;
+  turning `Show in menu bar` off leaves an enabled calendar item in place, and both off leaves neither
+- On Meeting Title with Show Upcoming Events at 5 minutes, the title and countdown appear at T-5 and
+  step on the minute boundary, not on a keystroke
 - `Only show events with meetings` hides a linkless event and shows it again when unchecked
 - Hide Current Event on Automatically clears the entry at the start and hands the space to the next
   event inside its lead time; on 5 minutes it lingers counting up, then clears
-- Clicking the menu bar item opens the menu with `Join <title>` on top — a bare click never joins
+- Clicking the calendar item opens `Join <title>`, `Open in Calendar...`, `My Schedule` and
+  `Calendar Settings...` and nothing else; the second opens that event in Calendar.app, while a bare
+  click never joins
 - Camera Preview on: ↵ on the join card opens the panel **already showing live video** — no black
   frame, no blank mid-preview; ↵ joins, Esc drops the join; the camera light goes out with the
   panel, and the first run prompts once, before any panel appears

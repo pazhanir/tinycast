@@ -5,12 +5,100 @@ import CoreLocation
 import Foundation
 import PDFKit
 
+// MARK: - Standard Built-in AITool Definitions
+extension AITool {
+    static let calculate = AITool(
+        name: "calculate",
+        description: "Evaluate mathematical expressions, unit conversions, currency exchange rates, cryptocurrencies, date/time differences, percentages, and timezone conversions.",
+        parameters: JSONValue([
+            "type": "object",
+            "properties": [
+                "expression": [
+                    "type": "string",
+                    "description": "The math/currency/conversion/date expression to calculate, e.g. '100 USD in EUR', '25 * 40', 'days until Christmas', '50 miles in km'"
+                ]
+            ],
+            "required": ["expression"]
+        ]),
+        origin: "Built-in",
+        title: "Calculator"
+    )
+
+    static let webSearch = AITool(
+        name: "web_search",
+        description: "Search the web for up-to-date information, documentation, news, or articles using DuckDuckGo.",
+        parameters: JSONValue([
+            "type": "object",
+            "properties": [
+                "query": [
+                    "type": "string",
+                    "description": "The search query"
+                ]
+            ],
+            "required": ["query"]
+        ]),
+        origin: "Built-in",
+        title: "Web Search"
+    )
+
+    static let webFetch = AITool(
+        name: "web_fetch",
+        description: "Fetch and extract the readable markdown text content of a web page by URL.",
+        parameters: JSONValue([
+            "type": "object",
+            "properties": [
+                "url": [
+                    "type": "string",
+                    "description": "The URL of the web page to fetch"
+                ],
+                "max_characters": [
+                    "type": "integer",
+                    "description": "Maximum characters to extract (default 4000)"
+                ]
+            ],
+            "required": ["url"]
+        ]),
+        origin: "Built-in",
+        title: "Web Fetch"
+    )
+
+    static let getLocation = AITool(
+        name: "get_location",
+        description: "Get the user's approximate current location (city, region, country, timezone, coordinates).",
+        parameters: JSONValue([
+            "type": "object",
+            "properties": [:]
+        ]),
+        origin: "Built-in",
+        title: "Location"
+    )
+
+    static let getWeather = AITool(
+        name: "get_weather",
+        description: "Get current weather conditions and forecast for a specific location or current location.",
+        parameters: JSONValue([
+            "type": "object",
+            "properties": [
+                "location": [
+                    "type": "string",
+                    "description": "City name, e.g. 'San Francisco', 'London', or 'current' for local weather"
+                ],
+                "days": [
+                    "type": "integer",
+                    "description": "Number of forecast days (1 to 7, default 1)"
+                ]
+            ]
+        ]),
+        origin: "Built-in",
+        title: "Weather"
+    )
+}
 
 // MARK: - AIToolRegistry.swift
-/// Central registry managing all available tools and their execution.
+/// Central registry managing all available native tools and their execution.
 @MainActor
-public final class AIToolRegistry {
-    public static let shared = AIToolRegistry()
+final class AIToolRegistry {
+    static let shared = AIToolRegistry()
 
     private let searchAggregator: WebSearchAggregator
     private let pageReader: WebPageReader
@@ -18,28 +106,28 @@ public final class AIToolRegistry {
     private let weatherService: WeatherService
     private let calculatorRunner: CalculatorToolRunner
 
-    public struct ExtensionToolInfo: Sendable {
-        public let extensionName: String
-        public let extensionTitle: String
-        public let iconPath: String?
+    struct ExtensionToolInfo: Sendable {
+        let extensionName: String
+        let extensionTitle: String
+        let iconPath: String?
 
-        public init(extensionName: String, extensionTitle: String, iconPath: String?) {
+        init(extensionName: String, extensionTitle: String, iconPath: String?) {
             self.extensionName = extensionName
             self.extensionTitle = extensionTitle
             self.iconPath = iconPath
         }
     }
 
-    public var extensionToolsProvider: (() -> [AIToolDefinition])?
-    public var extensionToolExecutor: ((AIToolCall) async -> AIToolResult?)?
-    public var extensionToolInfoProvider: ((String) -> ExtensionToolInfo?)?
-    public var calculatorEvaluator: (@MainActor (String) -> String?)? {
+    var extensionToolsProvider: (() -> [AITool])?
+    var extensionToolExecutor: ((AIToolCall) async -> AIToolResult?)?
+    var extensionToolInfoProvider: ((String) -> ExtensionToolInfo?)?
+    var calculatorEvaluator: (@MainActor (String) -> String?)? {
         didSet {
             calculatorRunner.evaluator = calculatorEvaluator
         }
     }
 
-    public func extensionInfo(for toolName: String) -> ExtensionToolInfo? {
+    func extensionInfo(for toolName: String) -> ExtensionToolInfo? {
         extensionToolInfoProvider?(toolName)
     }
 
@@ -57,14 +145,14 @@ public final class AIToolRegistry {
         self.calculatorRunner = calculatorRunner
     }
 
-    public struct ToolFilter: Sendable {
-        public let webSearch: Bool
-        public let calculate: Bool
-        public let weather: Bool
-        public let location: Bool
-        public let extensionTools: Bool
+    struct ToolFilter: Sendable {
+        let webSearch: Bool
+        let calculate: Bool
+        let weather: Bool
+        let location: Bool
+        let extensionTools: Bool
 
-        public init(
+        init(
             webSearch: Bool = true,
             calculate: Bool = true,
             weather: Bool = true,
@@ -79,8 +167,8 @@ public final class AIToolRegistry {
         }
     }
 
-    public func tools(matching filter: ToolFilter) -> [AIToolDefinition] {
-        var tools: [AIToolDefinition] = []
+    func tools(matching filter: ToolFilter) -> [AITool] {
+        var tools: [AITool] = []
         if filter.webSearch {
             tools.append(.webSearch)
             tools.append(.webFetch)
@@ -101,12 +189,12 @@ public final class AIToolRegistry {
     }
 
     /// All tool definitions available for the model to use
-    public var availableTools: [AIToolDefinition] {
+    var availableTools: [AITool] {
         tools(matching: ToolFilter())
     }
 
     /// Executes a tool call asynchronously and returns the formatted result
-    public func execute(call: AIToolCall) async -> AIToolResult {
+    func execute(call: AIToolCall) async -> AIToolResult {
         switch call.name {
         case "web_search":
             return await executeWebSearch(call: call)
@@ -124,22 +212,18 @@ public final class AIToolRegistry {
                     return result
                 }
             }
-            return AIToolResult(
-                callID: call.id,
-                name: call.name,
-                output: "Unknown tool: \(call.name)"
-            )
+            return AIToolResult.failure(call.id, "Unknown tool: \(call.name)")
         }
     }
 
     private func executeWebSearch(call: AIToolCall) async -> AIToolResult {
         var query = ""
-        if let data = call.argumentsJSON.data(using: .utf8),
+        if let data = call.arguments.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let q = json["query"] as? String {
             query = q
         } else {
-            query = call.argumentsJSON
+            query = call.arguments
         }
 
         let results = await searchAggregator.search(query: query)
@@ -149,59 +233,51 @@ public final class AIToolRegistry {
 
         return AIToolResult(
             callID: call.id,
-            name: call.name,
-            output: formatted.isEmpty ? "No search results found for '\(query)'." : formatted
+            content: formatted.isEmpty ? "No search results found for '\(query)'." : formatted,
+            isError: false
         )
     }
 
     private func executeWebFetch(call: AIToolCall) async -> AIToolResult {
         var urlString = ""
         var maxChars = 4000
-        if let data = call.argumentsJSON.data(using: .utf8),
+        if let data = call.arguments.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             if let u = json["url"] as? String { urlString = u }
             if let m = json["max_characters"] as? Int { maxChars = m }
         }
 
         guard let url = URL(string: urlString) else {
-            return AIToolResult(
-                callID: call.id,
-                name: call.name,
-                output: "Invalid URL: \(urlString)"
-            )
+            return AIToolResult.failure(call.id, "Invalid URL: \(urlString)")
         }
 
         do {
             let markdown = try await pageReader.read(url: url, maxCharacters: maxChars)
             return AIToolResult(
                 callID: call.id,
-                name: call.name,
-                output: markdown
+                content: markdown,
+                isError: false
             )
         } catch {
-            return AIToolResult(
-                callID: call.id,
-                name: call.name,
-                output: "Failed to fetch page: \(error.localizedDescription)"
-            )
+            return AIToolResult.failure(call.id, "Failed to fetch page: \(error.localizedDescription)")
         }
     }
 
     private func executeCalculate(call: AIToolCall) -> AIToolResult {
         var expr = ""
-        if let data = call.argumentsJSON.data(using: .utf8),
+        if let data = call.arguments.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let e = json["expression"] as? String {
             expr = e
         } else {
-            expr = call.argumentsJSON
+            expr = call.arguments
         }
 
         let output = calculatorRunner.calculate(expression: expr)
         return AIToolResult(
             callID: call.id,
-            name: call.name,
-            output: output
+            content: output,
+            isError: false
         )
     }
 
@@ -209,22 +285,18 @@ public final class AIToolRegistry {
         if let loc = await locationProvider.getLocation() {
             return AIToolResult(
                 callID: call.id,
-                name: call.name,
-                output: loc.summary
+                content: loc.summary,
+                isError: false
             )
         } else {
-            return AIToolResult(
-                callID: call.id,
-                name: call.name,
-                output: "Could not determine location automatically."
-            )
+            return AIToolResult.failure(call.id, "Could not determine location automatically.")
         }
     }
 
     private func executeGetWeather(call: AIToolCall) async -> AIToolResult {
         var location: String?
         var days = 1
-        if let data = call.argumentsJSON.data(using: .utf8),
+        if let data = call.arguments.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             if let loc = json["location"] as? String { location = loc }
             if let d = json["days"] as? Int { days = d }
@@ -233,8 +305,8 @@ public final class AIToolRegistry {
         let output = await weatherService.getWeather(location: location, days: days)
         return AIToolResult(
             callID: call.id,
-            name: call.name,
-            output: output
+            content: output,
+            isError: false
         )
     }
 }
@@ -242,14 +314,14 @@ public final class AIToolRegistry {
 // MARK: - CalculatorToolRunner.swift
 /// Fast on-device evaluator for math, units, currencies, and dates.
 @MainActor
-public final class CalculatorToolRunner: Sendable {
-    public var evaluator: (@MainActor (String) -> String?)?
+final class CalculatorToolRunner: Sendable {
+    var evaluator: (@MainActor (String) -> String?)?
 
-    public init(evaluator: (@MainActor (String) -> String?)? = nil) {
+    init(evaluator: (@MainActor (String) -> String?)? = nil) {
         self.evaluator = evaluator
     }
 
-    public func calculate(expression: String) -> String {
+    func calculate(expression: String) -> String {
         let trimmed = expression.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return "Error: Expression cannot be empty."
@@ -264,19 +336,19 @@ public final class CalculatorToolRunner: Sendable {
 }
 
 // MARK: - LocationProvider.swift
-public struct UserLocationInfo: Equatable, Sendable {
-    public let subLocality: String
-    public let city: String
-    public let region: String
-    public let country: String
-    public let countryCode: String
-    public let postalCode: String
-    public let latitude: Double
-    public let longitude: Double
-    public let timezone: String
-    public let source: String
+struct UserLocationInfo: Equatable, Sendable {
+    let subLocality: String
+    let city: String
+    let region: String
+    let country: String
+    let countryCode: String
+    let postalCode: String
+    let latitude: Double
+    let longitude: Double
+    let timezone: String
+    let source: String
 
-    public init(
+    init(
         subLocality: String = "",
         city: String,
         region: String,
@@ -300,203 +372,92 @@ public struct UserLocationInfo: Equatable, Sendable {
         self.source = source
     }
 
-    public var summary: String {
+    var summary: String {
         var parts: [String] = []
-        if !subLocality.isEmpty { parts.append(subLocality) }
-        if !city.isEmpty && city != subLocality { parts.append(city) }
-        if !region.isEmpty, region != city { parts.append(region) }
-        if !country.isEmpty { parts.append(country) }
-        if !postalCode.isEmpty { parts.append(postalCode) }
-        let place = parts.joined(separator: ", ")
-
-        var lines: [String] = [
-            "Exact Location: \(place)",
-            "Coordinates: \(latitude), \(longitude)",
-            "Timezone: \(timezone)",
-            "Accuracy Source: \(source)"
-        ]
-        if !subLocality.isEmpty {
-            lines.insert("Area / Neighborhood: \(subLocality)", at: 1)
-        }
-        if !city.isEmpty {
-            lines.insert("City: \(city)", at: 2)
-        }
-        return lines.joined(separator: "\n")
+        if !city.isEmpty { parts.append("City: \(city)") }
+        if !region.isEmpty { parts.append("Region: \(region)") }
+        if !country.isEmpty { parts.append("Country: \(country) (\(countryCode))") }
+        if !timezone.isEmpty { parts.append("Timezone: \(timezone)") }
+        parts.append("Coordinates: \(String(format: "%.4f", latitude)), \(String(format: "%.4f", longitude))")
+        parts.append("Source: \(source)")
+        return parts.joined(separator: "\n")
     }
 }
 
-@MainActor
-private final class CoreLocationFetcher: NSObject, @preconcurrency CLLocationManagerDelegate {
-    private let manager = CLLocationManager()
-    private var continuation: CheckedContinuation<CLLocation?, Never>?
+final class LocationProvider: NSObject, CLLocationManagerDelegate, @unchecked Sendable {
+    private let manager: CLLocationManager
+    private let geocoder: CLGeocoder
 
     override init() {
+        self.manager = CLLocationManager()
+        self.geocoder = CLGeocoder()
         super.init()
-        manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
     }
 
-    func requestLocation() async -> CLLocation? {
+    func getLocation() async -> UserLocationInfo? {
+        if let gpsLocation = await getCoreLocation() {
+            return gpsLocation
+        }
+        return await getIPLocation()
+    }
+
+    private func getCoreLocation() async -> UserLocationInfo? {
         let status = manager.authorizationStatus
-        if status == .notDetermined {
-            manager.requestAlwaysAuthorization()
-        } else if status == .denied || status == .restricted {
+        guard status == .authorizedAlways || status == .authorized else {
             return nil
         }
 
-        return await withCheckedContinuation { cont in
-            self.continuation = cont
-            self.manager.startUpdatingLocation()
-
-            let timeoutSec = (status == .notDetermined) ? 8 : 4
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(timeoutSec))
-                guard let self, let cont = self.continuation else { return }
-                self.continuation = nil
-                self.manager.stopUpdatingLocation()
-                cont.resume(returning: nil)
-            }
-        }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
-        manager.stopUpdatingLocation()
-        if let cont = continuation {
-            continuation = nil
-            cont.resume(returning: location)
-        }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        manager.stopUpdatingLocation()
-        if let cont = continuation {
-            continuation = nil
-            cont.resume(returning: nil)
-        }
-    }
-
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        let status = manager.authorizationStatus
-        if status == .authorizedAlways || status == .authorized {
-            manager.startUpdatingLocation()
-        } else if status == .denied || status == .restricted {
-            manager.stopUpdatingLocation()
-            if let cont = continuation {
-                continuation = nil
-                cont.resume(returning: nil)
-            }
-        }
-    }
-}
-
-public final class LocationProvider: @unchecked Sendable {
-    private let session: URLSession
-
-    public init(session: URLSession? = nil) {
-        if let session {
-            self.session = session
-        } else {
-            let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 4
-            config.timeoutIntervalForResource = 5
-            self.session = URLSession(configuration: config)
-        }
-    }
-
-    public func getLocation() async -> UserLocationInfo? {
-        // 1. Try CoreLocation first for exact GPS accuracy
-        if let coreLoc = await fetchCoreLocation() {
-            return coreLoc
-        }
-
-        // 2. Fall back to IP Geolocation if CoreLocation is denied/unavailable
-        if let ipLocation = await fetchIPLocation() {
-            return ipLocation
-        }
-
-        return nil
-    }
-
-    private func fetchCoreLocation() async -> UserLocationInfo? {
-        let fetcher = await MainActor.run { CoreLocationFetcher() }
-        guard let location = await fetcher.requestLocation() else {
+        guard let location = manager.location else {
             return nil
         }
-
-        let geocoder = CLGeocoder()
-        let placemarks = try? await geocoder.reverseGeocodeLocation(location)
-        if let place = placemarks?.first {
-            let subLocality = place.subLocality ?? place.thoroughfare ?? ""
-            let city = place.locality ?? place.subAdministrativeArea ?? place.name ?? ""
-            let region = place.administrativeArea ?? ""
-            let country = place.country ?? ""
-            let countryCode = place.isoCountryCode ?? ""
-            let postalCode = place.postalCode ?? ""
-            let timezone = place.timeZone?.identifier ?? TimeZone.current.identifier
-
-            return UserLocationInfo(
-                subLocality: subLocality,
-                city: city,
-                region: region,
-                country: country,
-                countryCode: countryCode,
-                postalCode: postalCode,
-                latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude,
-                timezone: timezone,
-                source: "Device GPS (CoreLocation - High Accuracy)"
-            )
-        }
-
-        return UserLocationInfo(
-            city: "",
-            region: "",
-            country: "",
-            countryCode: "",
-            latitude: location.coordinate.latitude,
-            longitude: location.coordinate.longitude,
-            timezone: TimeZone.current.identifier,
-            source: "Device GPS (CoreLocation - High Accuracy)"
-        )
-    }
-
-    private func fetchIPLocation() async -> UserLocationInfo? {
-        guard let url = URL(string: "https://ipwho.is/") else { return nil }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 4
-        request.setValue("Mozilla/5.0 Tinycast/1.0", forHTTPHeaderField: "User-Agent")
 
         do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let success = json["success"] as? Bool, success else {
-                return nil
-            }
-
-            let city = json["city"] as? String ?? ""
-            let region = json["region"] as? String ?? ""
-            let country = json["country"] as? String ?? ""
-            let countryCode = json["country_code"] as? String ?? ""
-            let postalCode = json["postal"] as? String ?? ""
-            let lat = json["latitude"] as? Double ?? 0.0
-            let lon = json["longitude"] as? Double ?? 0.0
-            var tz = ""
-            if let timezoneObj = json["timezone"] as? [String: Any],
-               let tzId = timezoneObj["id"] as? String {
-                tz = tzId
-            } else {
-                tz = TimeZone.current.identifier
-            }
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            guard let place = placemarks.first else { return nil }
 
             return UserLocationInfo(
-                subLocality: "",
+                subLocality: place.subLocality ?? "",
+                city: place.locality ?? place.name ?? "",
+                region: place.administrativeArea ?? "",
+                country: place.country ?? "",
+                countryCode: place.isoCountryCode ?? "",
+                postalCode: place.postalCode ?? "",
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+                timezone: place.timeZone?.identifier ?? TimeZone.current.identifier,
+                source: "CoreLocation (GPS)"
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    private func getIPLocation() async -> UserLocationInfo? {
+        guard let url = URL(string: "http://ip-api.com/json/?fields=status,country,countryCode,regionName,city,zip,lat,lon,timezone") else {
+            return nil
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["status"] as? String == "success" else { return nil }
+
+            let city = json["city"] as? String ?? ""
+            let region = json["regionName"] as? String ?? ""
+            let country = json["country"] as? String ?? ""
+            let countryCode = json["countryCode"] as? String ?? ""
+            let zip = json["zip"] as? String ?? ""
+            let lat = json["lat"] as? Double ?? 0.0
+            let lon = json["lon"] as? Double ?? 0.0
+            let tz = json["timezone"] as? String ?? TimeZone.current.identifier
+
+            return UserLocationInfo(
                 city: city,
                 region: region,
                 country: country,
                 countryCode: countryCode,
-                postalCode: postalCode,
+                postalCode: zip,
                 latitude: lat,
                 longitude: lon,
                 timezone: tz,
@@ -509,11 +470,11 @@ public final class LocationProvider: @unchecked Sendable {
 }
 
 // MARK: - WeatherService.swift
-public final class WeatherService: Sendable {
+final class WeatherService: Sendable {
     private let session: URLSession
     private let locationProvider: LocationProvider
 
-    public init(session: URLSession? = nil, locationProvider: LocationProvider = LocationProvider()) {
+    init(session: URLSession? = nil, locationProvider: LocationProvider = LocationProvider()) {
         self.locationProvider = locationProvider
         if let session {
             self.session = session
@@ -525,7 +486,7 @@ public final class WeatherService: Sendable {
         }
     }
 
-    public func getWeather(location: String?, days: Int = 1) async -> String {
+    func getWeather(location: String?, days: Int = 1) async -> String {
         let isFahrenheit: Bool = {
             if #available(macOS 13.0, *) {
                 return Locale.current.measurementSystem == .us
@@ -551,7 +512,6 @@ public final class WeatherService: Sendable {
                 return "Unable to determine current location. Please specify a city name (e.g. 'weather in Paris')."
             }
         } else {
-            // Geocode city name using Open-Meteo Geocoding API
             guard let encoded = locTrimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
                   let geoURL = URL(string: "https://geocoding-api.open-meteo.com/v1/search?name=\(encoded)&count=1&language=en&format=json") else {
                 return "Invalid location query: \(locTrimmed)"
@@ -636,7 +596,7 @@ public final class WeatherService: Sendable {
         }
     }
 
-    public static func descriptionForWeatherCode(_ code: Int) -> String {
+    static func descriptionForWeatherCode(_ code: Int) -> String {
         switch code {
         case 0: return "Clear sky"
         case 1: return "Mainly clear"
@@ -663,12 +623,11 @@ public final class WeatherService: Sendable {
 }
 
 // MARK: - HTMLToMarkdownConverter.swift
-public enum HTMLToMarkdownConverter {
+enum HTMLToMarkdownConverter {
     /// Converts raw HTML string into clean, token-efficient Markdown.
-    public static func convert(html: String, maxCharacters: Int = 4000) -> String {
+    static func convert(html: String, maxCharacters: Int = 4000) -> String {
         var text = html
 
-        // 1. Remove scripts, styles, noscript, svg, nav, footer, header, aside, iframe, form
         let removePatterns = [
             #"<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>"#,
             #"<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>"#,
@@ -689,7 +648,6 @@ public enum HTMLToMarkdownConverter {
             }
         }
 
-        // 2. Extract article or main if present
         if let articleRegex = try? NSRegularExpression(pattern: #"<article\b[^>]*>(.*?)<\/article>"#, options: [.caseInsensitive, .dotMatchesLineSeparators]),
            let match = articleRegex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)),
            let range = Range(match.range(at: 1), in: text) {
@@ -700,164 +658,179 @@ public enum HTMLToMarkdownConverter {
             text = String(text[range])
         }
 
-        // 3. Convert headers
-        for level in 1...6 {
-            let hPattern = "<h\(level)[^>]*>(.*?)</h\(level)>"
-            let prefix = String(repeating: "#", count: level) + " "
-            if let regex = try? NSRegularExpression(pattern: hPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
-                text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "\n\n\(prefix)$1\n\n")
+        let tagsToNewlines = [
+            #"<\/(p|div|section|h[1-6]|tr|li|blockquote)>"#: "\n\n",
+            #"<br\s*\/?>"# : "\n",
+            #"<hr\s*\/?>"# : "\n---\n"
+        ]
+        for (pattern, replacement) in tagsToNewlines {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+                text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: replacement)
             }
         }
 
-        // 4. Convert links: <a href="url">text</a> -> [text](url)
         let linkPattern = #"<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>"#
         if let regex = try? NSRegularExpression(pattern: linkPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
             text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "[$2]($1)")
         }
 
-        // 5. Convert bold and italics
-        let boldPattern = #"<(?:strong|b)\b[^>]*>(.*?)<\/(?:strong|b)>"#
-        if let regex = try? NSRegularExpression(pattern: boldPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
-            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "**$1**")
-        }
-        let italicPattern = #"<(?:em|i)\b[^>]*>(.*?)<\/(?:em|i)>"#
-        if let regex = try? NSRegularExpression(pattern: italicPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
-            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "*$1*")
-        }
-
-        // 6. Convert code blocks & inline code
-        let preCodePattern = #"<pre\b[^>]*><code\b[^>]*>(.*?)<\/code><\/pre>"#
-        if let regex = try? NSRegularExpression(pattern: preCodePattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
-            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "\n```\n$1\n```\n")
-        }
-        let inlineCodePattern = #"<code\b[^>]*>(.*?)<\/code>"#
-        if let regex = try? NSRegularExpression(pattern: inlineCodePattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
-            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "`$1`")
-        }
-
-        // 7. Convert paragraphs, line breaks, blockquotes, and list items
-        let brPattern = #"<br\s*\/?>"#
-        if let regex = try? NSRegularExpression(pattern: brPattern, options: .caseInsensitive) {
-            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "\n")
-        }
-        let pPattern = #"<p\b[^>]*>(.*?)<\/p>"#
-        if let regex = try? NSRegularExpression(pattern: pPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
-            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "\n\n$1\n\n")
-        }
-        let liPattern = #"<li\b[^>]*>(.*?)<\/li>"#
-        if let regex = try? NSRegularExpression(pattern: liPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
-            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "\n* $1")
-        }
-        let bqPattern = #"<blockquote\b[^>]*>(.*?)<\/blockquote>"#
-        if let regex = try? NSRegularExpression(pattern: bqPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
-            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "\n\n> $1\n\n")
-        }
-
-        // 8. Strip all remaining HTML tags
-        let tagPattern = #"<[^>]+>"#
-        if let regex = try? NSRegularExpression(pattern: tagPattern, options: []) {
-            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "")
-        }
-
-        // 9. Decode HTML entities
-        text = decodeHTMLEntities(text)
-
-        // 10. Clean noise: empty links, javascript links, social share tags
-        let noisePatterns = [
-            #"\*?\s*\[\s*\]\([^\)]*\)"#,
-            #"\*?\s*\[[^\]]*\]\(javascript:[^\)]*\)"#,
-            #"\n\s*\*\s*\n"#
+        let headingPatterns = [
+            #"<h1\b[^>]*>(.*?)<\/h1>"#: "# $1\n\n",
+            #"<h2\b[^>]*>(.*?)<\/h2>"#: "## $1\n\n",
+            #"<h3\b[^>]*>(.*?)<\/h3>"#: "### $1\n\n",
+            #"<h[4-6]\b[^>]*>(.*?)<\/h[4-6]>"#: "#### $1\n\n"
         ]
-        for pattern in noisePatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
-                text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "\n")
+        for (pattern, replacement) in headingPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
+                text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: replacement)
             }
         }
 
-        // 11. Clean excessive newlines and whitespace
-        if let multilineRegex = try? NSRegularExpression(pattern: #"\n{3,}"#) {
-            text = multilineRegex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "\n\n")
+        let strongPattern = #"<(strong|b)\b[^>]*>(.*?)<\/(strong|b)>"#
+        if let regex = try? NSRegularExpression(pattern: strongPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
+            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "**$2**")
         }
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 12. Bounded character truncation
+        let emPattern = #"<(em|i)\b[^>]*>(.*?)<\/(em|i)>"#
+        if let regex = try? NSRegularExpression(pattern: emPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
+            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "*$2*")
+        }
+
+        let codePattern = #"<code\b[^>]*>(.*?)<\/code>"#
+        if let regex = try? NSRegularExpression(pattern: codePattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
+            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "`$1`")
+        }
+
+        let stripPattern = #"<[^>]+>"#
+        if let regex = try? NSRegularExpression(pattern: stripPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
+            text = regex.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+
+        let entities: [String: String] = [
+            "&nbsp;": " ",
+            "&amp;": "&",
+            "&lt;": "<",
+            "&gt;": ">",
+            "&quot;": "\"",
+            "&#39;": "'",
+            "&mdash;": "—",
+            "&ndash;": "–",
+            "&hellip;": "…"
+        ]
+        for (entity, replacement) in entities {
+            text = text.replacingOccurrences(of: entity, with: replacement)
+        }
+
+        let lines = text.components(separatedBy: .newlines)
+        var cleanedLines: [String] = []
+        var emptyCount = 0
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                emptyCount += 1
+                if emptyCount <= 2 {
+                    cleanedLines.append("")
+                }
+            } else {
+                emptyCount = 0
+                cleanedLines.append(trimmed)
+            }
+        }
+        text = cleanedLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+
         if text.count > maxCharacters {
             let index = text.index(text.startIndex, offsetBy: maxCharacters)
-            text = String(text[..<index]) + "\n\n[Content truncated...]"
+            text = String(text[..<index]) + "\n\n...[Content truncated for token budget]..."
         }
 
         return text
     }
-
-    public static func decodeHTMLEntities(_ text: String) -> String {
-        var result = text
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&#39;", with: "'")
-            .replacingOccurrences(of: "&apos;", with: "'")
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .replacingOccurrences(of: "&#8217;", with: "'")
-            .replacingOccurrences(of: "&#8216;", with: "'")
-            .replacingOccurrences(of: "&#8220;", with: "\"")
-            .replacingOccurrences(of: "&#8221;", with: "\"")
-            .replacingOccurrences(of: "&#8211;", with: "–")
-            .replacingOccurrences(of: "&#8212;", with: "—")
-            .replacingOccurrences(of: "&mdash;", with: "—")
-            .replacingOccurrences(of: "&ndash;", with: "–")
-
-        // Hex and decimal numeric entities
-        let entityPattern = #"&#(x?[0-9a-fA-F]+);"#
-        if let regex = try? NSRegularExpression(pattern: entityPattern) {
-            let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result))
-            for match in matches.reversed() {
-                if let entityRange = Range(match.range, in: result),
-                   let codeRange = Range(match.range(at: 1), in: result) {
-                    let codeString = String(result[codeRange])
-                    let codePoint: UInt32?
-                    if codeString.lowercased().hasPrefix("x") {
-                        codePoint = UInt32(codeString.dropFirst(), radix: 16)
-                    } else {
-                        codePoint = UInt32(codeString, radix: 10)
-                    }
-                    if let codePoint, let scalar = UnicodeScalar(codePoint) {
-                        result.replaceSubrange(entityRange, with: String(scalar))
-                    }
-                }
-            }
-        }
-        return result
-    }
-}
-
-// MARK: - PDFDocumentReader.swift
-public enum PDFDocumentReader {
-    public static func extractText(from data: Data, maxCharacters: Int = 10000) -> String? {
-        guard let doc = PDFDocument(data: data) else { return nil }
-        var fullText = ""
-        for i in 0..<doc.pageCount {
-            if let pageText = doc.page(at: i)?.string {
-                fullText += pageText + "\n\n"
-                if fullText.count >= maxCharacters {
-                    break
-                }
-            }
-        }
-        let trimmed = fullText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.count > maxCharacters {
-            let index = trimmed.index(trimmed.startIndex, offsetBy: maxCharacters)
-            return String(trimmed[..<index]) + "\n\n[PDF truncated...]"
-        }
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }
 
 // MARK: - WebPageReader.swift
-public final class WebPageReader: Sendable {
+final class WebPageReader: Sendable {
     private let session: URLSession
 
-    public init(session: URLSession? = nil) {
+    init(session: URLSession? = nil) {
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 10
+            config.timeoutIntervalForResource = 15
+            self.session = URLSession(configuration: config)
+        }
+    }
+
+    func read(url: URL, maxCharacters: Int = 4000) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "WebPageReader", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid HTTP response"])
+        }
+
+        guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            throw NSError(domain: "WebPageReader", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP error \(httpResponse.statusCode)"])
+        }
+
+        let mime = httpResponse.mimeType?.lowercased() ?? ""
+        if mime.contains("pdf") || url.pathExtension.lowercased() == "pdf" {
+            if let pdfDoc = PDFDocument(data: data) {
+                var extractedText = ""
+                let pageCount = min(pdfDoc.pageCount, 10)
+                for i in 0..<pageCount {
+                    if let page = pdfDoc.page(at: i), let pageStr = page.string {
+                        extractedText += pageStr + "\n"
+                        if extractedText.count >= maxCharacters { break }
+                    }
+                }
+                let truncated = String(extractedText.prefix(maxCharacters))
+                return truncated.isEmpty ? "No readable text found in PDF." : truncated
+            }
+        }
+
+        let encoding: String.Encoding = {
+            if let encName = httpResponse.textEncodingName {
+                let cfEnc = CFStringConvertIANACharSetNameToEncoding(encName as CFString)
+                if cfEnc != kCFStringEncodingInvalidId {
+                    return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cfEnc))
+                }
+            }
+            return .utf8
+        }()
+
+        let rawString = String(data: data, encoding: encoding) ?? String(decoding: data, as: UTF8.self)
+        return HTMLToMarkdownConverter.convert(html: rawString, maxCharacters: maxCharsFrom(maxCharacters))
+    }
+
+    private func maxCharsFrom(_ requested: Int) -> Int {
+        min(max(requested, 500), 12000)
+    }
+}
+
+// MARK: - WebSearchResult.swift
+struct WebSearchResult: Identifiable, Equatable, Sendable {
+    let id = UUID()
+    let title: String
+    let url: String
+    let snippet: String
+
+    init(title: String, url: String, snippet: String) {
+        self.title = title
+        self.url = url
+        self.snippet = snippet
+    }
+}
+
+// MARK: - WebSearchAggregator.swift
+final class WebSearchAggregator: Sendable {
+    private let session: URLSession
+
+    init(session: URLSession? = nil) {
         if let session {
             self.session = session
         } else {
@@ -868,807 +841,136 @@ public final class WebPageReader: Sendable {
         }
     }
 
-    public func read(url: URL, maxCharacters: Int = 4000) async throws -> String {
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 8
-        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
+    func search(query: String) async -> [WebSearchResult] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
 
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw NSError(domain: "WebPageReader", code: -1, userInfo: [NSLocalizedDescriptionKey: "No HTTP response from \(url.host ?? url.absoluteString)"])
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw NSError(domain: "WebPageReader", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch webpage (HTTP \(http.statusCode))"])
-        }
-
-        let contentType = http.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
-        if contentType.contains("application/pdf") || url.pathExtension.lowercased() == "pdf" {
-            if let pdfText = PDFDocumentReader.extractText(from: data, maxCharacters: maxCharacters) {
-                return pdfText
-            }
-        }
-
-        let html = String(decoding: data, as: UTF8.self)
-        let markdown = HTMLToMarkdownConverter.convert(html: html, maxCharacters: maxCharacters)
-        return markdown.isEmpty ? "The webpage contained no readable text content." : markdown
-    }
-}
-
-// MARK: - WebSearchCategory.swift
-public enum WebSearchCategory: String, CaseIterable, Codable, Sendable {
-    case general
-    case news
-    case wikipedia
-
-    public var displayName: String {
-        switch self {
-        case .general: return "General"
-        case .news: return "News"
-        case .wikipedia: return "Wikipedia"
-        }
-    }
-}
-
-// MARK: - WebSearchEngineType.swift
-public enum WebSearchEngineType: String, CaseIterable, Codable, Sendable {
-    case duckDuckGo = "duckduckgo"
-    case brave = "brave"
-    case aol = "aol"
-    case yahoo = "yahoo"
-    case wikipedia = "wikipedia"
-    case news = "news"
-
-    public var displayName: String {
-        switch self {
-        case .duckDuckGo: return "DuckDuckGo"
-        case .brave: return "Brave"
-        case .aol: return "AOL"
-        case .yahoo: return "Yahoo"
-        case .wikipedia: return "Wikipedia"
-        case .news: return "News"
-        }
-    }
-
-    public var defaultWeight: Double {
-        switch self {
-        case .news: return 1.3
-        case .duckDuckGo: return 1.1
-        case .brave: return 1.0
-        case .yahoo: return 1.0
-        case .aol: return 0.85
-        case .wikipedia: return 0.9
-        }
-    }
-}
-
-// MARK: - WebSearchResult.swift
-public struct WebSearchResult: Identifiable, Equatable, Hashable, Sendable {
-    public let id: UUID
-    public let title: String
-    public let url: URL
-    public let snippet: String
-    public let engine: WebSearchEngineType
-    public let rank: Int
-    public var score: Double
-    public let publishedDate: Date?
-
-    public init(
-        id: UUID = UUID(),
-        title: String,
-        url: URL,
-        snippet: String,
-        engine: WebSearchEngineType,
-        rank: Int = 1,
-        score: Double = 0.0,
-        publishedDate: Date? = nil
-    ) {
-        self.id = id
-        self.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.url = url
-        self.snippet = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.engine = engine
-        self.rank = rank
-        self.score = score
-        self.publishedDate = publishedDate
-    }
-}
-
-// MARK: - WebSearchQuery.swift
-public struct WebSearchQuery: Equatable, Sendable {
-    public let rawQuery: String
-    public let searchTerm: String
-    public let category: WebSearchCategory
-    public let siteConstraint: String?
-
-    public var siteFilter: String? { siteConstraint }
-
-    public init(query: String, category: WebSearchCategory = .general) {
-        self.rawQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        var parsedCategory = category
-        let text = self.rawQuery
-        var site: String?
-
-        var words = text.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-
-        // Check for bangs anywhere in the words
-        if let bangIndex = words.firstIndex(where: { $0.hasPrefix("!") }) {
-            let bang = String(words[bangIndex].dropFirst()).lowercased()
-            var matched = false
-            switch bang {
-            case "w", "wiki", "wikipedia":
-                parsedCategory = .wikipedia
-                matched = true
-            case "n", "news":
-                parsedCategory = .news
-                matched = true
-            default:
-                break
-            }
-            if matched {
-                words.remove(at: bangIndex)
-            }
-        } else if parsedCategory == .general {
-            let lower = text.lowercased()
-            if lower.contains("news") || lower.contains("today") || lower.contains("latest") || lower.contains("breaking") {
-                parsedCategory = .news
-            }
-        }
-
-        // Clean out hallucinated past years only when query explicitly asks for today/latest/current/breaking news
-        let lower = text.lowercased()
-        let isAskingCurrent = lower.contains("today") || lower.contains("latest") || lower.contains("breaking") || lower.contains("current") || lower.contains("now")
-        if parsedCategory == .news && isAskingCurrent {
-            let currentYear = Calendar.current.component(.year, from: Date())
-            words = words.filter { word in
-                if let year = Int(word), year >= 2020, year < currentYear {
-                    return false
-                }
-                return true
-            }
-        }
-
-        // Check for site: filter
-        if let siteIndex = words.firstIndex(where: { $0.lowercased().hasPrefix("site:") }) {
-            let token = words[siteIndex]
-            site = String(token.dropFirst(5))
-        }
-
-        self.category = parsedCategory
-        self.siteConstraint = site
-        self.searchTerm = words.joined(separator: " ")
-    }
-}
-
-// MARK: - URLNormalizer.swift
-public enum URLNormalizer {
-    private static let trackingParameters: Set<String> = [
-        "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-        "fbclid", "gclid", "ref", "source", "spm", "_hsenc", "_hsmi",
-        "mc_cid", "mc_eid", "yclid", "_openstat"
-    ]
-
-    /// Returns a clean canonical URL without tracking parameters or fragments.
-    public static func normalize(_ url: URL) -> URL {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return url
-        }
-
-        // Strip tracking query parameters
-        if let queryItems = components.queryItems {
-            let filtered = queryItems.filter { !trackingParameters.contains($0.name.lowercased()) }
-            components.queryItems = filtered.isEmpty ? nil : filtered
-        }
-
-        // Normalize host (strip www.)
-        if let host = components.host?.lowercased() {
-            if host.hasPrefix("www.") {
-                components.host = String(host.dropFirst(4))
-            } else {
-                components.host = host
-            }
-        }
-
-        // Strip fragment (#...)
-        components.fragment = nil
-
-        // Strip trailing slash on path
-        if components.path == "/" {
-            components.path = ""
-        } else if components.path.hasSuffix("/") {
-            components.path = String(components.path.dropLast())
-        }
-
-        return components.url ?? url
-    }
-
-    /// String key for deduplicating URLs.
-    public static func deduplicationKey(for url: URL) -> String {
-        normalize(url).absoluteString.lowercased()
-    }
-}
-
-// MARK: - URLRedirectDecoder.swift
-public enum URLRedirectDecoder {
-    /// Unwrap tracking and proxy redirects (DuckDuckGo uddg=, AOL/Yahoo RU=)
-    public static func decode(_ rawURLString: String) -> URL? {
-        let trimmed = rawURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed) else { return nil }
-
-        // 1. DuckDuckGo: //duckduckgo.com/l/?uddg=<encoded_url>
-        if url.host?.contains("duckduckgo.com") == true || trimmed.contains("/l/?uddg=") {
-            if let components = URLComponents(string: trimmed),
-               let uddg = components.queryItems?.first(where: { $0.name == "uddg" })?.value {
-                if let decoded = uddg.removingPercentEncoding, let target = URL(string: decoded) {
-                    return target
-                }
-            }
-        }
-
-        // 2. AOL / Yahoo: .../RU=<encoded_url>/RK=...
-        if trimmed.contains("/RU=") {
-            let pattern = #"/RU=([^/]+)/RK="#
-            if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
-               let range = Range(match.range(at: 1), in: trimmed) {
-                let encodedTarget = String(trimmed[range])
-                if let decoded = encodedTarget.removingPercentEncoding, let target = URL(string: decoded) {
-                    return target
-                }
-            }
-        }
-
-        // 3. Protocol relative URL: //example.com -> https://example.com
-        if trimmed.hasPrefix("//") {
-            return URL(string: "https:" + trimmed)
-        }
-
-        return url
-    }
-}
-
-// MARK: - ConsensusScorer.swift
-public enum ConsensusScorer {
-    /// SearXNG-inspired Reciprocal Rank Fusion (RRF) with engine agreement bonus.
-    /// Score(u) = (Agreeing Engines Count) * sum_e ( weight(e) / (rank_e + 60) )
-    public static func score(
-        engineResults: [[WebSearchResult]],
-        weights: [WebSearchEngineType: Double] = [:]
-    ) -> [WebSearchResult] {
-        struct ScoredEntry {
-            var primaryResult: WebSearchResult
-            var agreeingEngines: Set<WebSearchEngineType>
-            var rawRRFScore: Double
-            var bestSnippet: String
-        }
-
-        var groups: [String: ScoredEntry] = [:]
-
-        for results in engineResults {
-            for result in results {
-                let key = URLNormalizer.deduplicationKey(for: result.url)
-                let engine = result.engine
-                let weight = weights[engine] ?? engine.defaultWeight
-                let rrf = weight / Double(result.rank + 60)
-
-                if var existing = groups[key] {
-                    existing.agreeingEngines.insert(engine)
-                    existing.rawRRFScore += rrf
-                    if result.snippet.count > existing.bestSnippet.count {
-                        existing.bestSnippet = result.snippet
-                    }
-                    groups[key] = existing
-                } else {
-                    groups[key] = ScoredEntry(
-                        primaryResult: result,
-                        agreeingEngines: [engine],
-                        rawRRFScore: rrf,
-                        bestSnippet: result.snippet
-                    )
-                }
-            }
-        }
-
-        var finalResults: [WebSearchResult] = []
-        for entry in groups.values {
-            let engineCount = Double(entry.agreeingEngines.count)
-            let totalScore = engineCount * entry.rawRRFScore
-            let cleanURL = URLNormalizer.normalize(entry.primaryResult.url)
-            let scored = WebSearchResult(
-                id: entry.primaryResult.id,
-                title: entry.primaryResult.title,
-                url: cleanURL,
-                snippet: entry.bestSnippet,
-                engine: entry.primaryResult.engine,
-                rank: entry.primaryResult.rank,
-                score: totalScore,
-                publishedDate: entry.primaryResult.publishedDate
-            )
-            finalResults.append(scored)
-        }
-
-        return finalResults.sorted { $0.score > $1.score }
-    }
-}
-
-// MARK: - WebSearchCacheStore.swift
-/// Thread-safe in-memory LRU cache for search results with TTL expiration.
-public actor WebSearchCacheStore {
-    private struct Entry {
-        let results: [WebSearchResult]
-        let timestamp: ContinuousClock.Instant
-    }
-
-    private var cache: [String: Entry] = [:]
-    private let ttl: Duration
-    private let capacity: Int
-
-    public init(ttl: Duration = .seconds(900), capacity: Int = 50) {
-        self.ttl = ttl
-        self.capacity = capacity
-    }
-
-    public func get(key: String) -> [WebSearchResult]? {
-        guard let entry = cache[key] else { return nil }
-        let now = ContinuousClock().now
-        if now - entry.timestamp > ttl {
-            cache.removeValue(forKey: key)
-            return nil
-        }
-        return entry.results
-    }
-
-    public func set(key: String, results: [WebSearchResult]) {
-        if cache.count >= capacity {
-            // Drop earliest entry
-            if let oldestKey = cache.min(by: { $0.value.timestamp < $1.value.timestamp })?.key {
-                cache.removeValue(forKey: oldestKey)
-            }
-        }
-        cache[key] = Entry(results: results, timestamp: ContinuousClock().now)
-    }
-
-    public func clear() {
-        cache.removeAll()
-    }
-}
-
-// MARK: - DuckDuckGoScraper.swift
-public enum DuckDuckGoScraper {
-    private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-
-    public static func search(query: String, session: URLSession = .shared) async throws -> [WebSearchResult] {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "https://html.duckduckgo.com/html/?q=\(encoded)") else {
             return []
         }
 
         var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = "q=\(encoded)&b=".data(using: .utf8)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            return []
-        }
-
-        let html = String(decoding: data, as: UTF8.self)
-        return parse(html: html)
-    }
-
-    public static func parse(html: String) -> [WebSearchResult] {
-        var results: [WebSearchResult] = []
-        let resultPattern = #"<a\s+[^>]*class="[^"]*result__snippet[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>"#
-
-        // Extract using regex
-        guard let snippetRegex = try? NSRegularExpression(pattern: resultPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
-            return []
-        }
-
-        let matches = snippetRegex.matches(in: html, options: [], range: NSRange(html.startIndex..., in: html))
-        var rank = 1
-
-        for match in matches.prefix(10) {
-            guard let hrefRange = Range(match.range(at: 1), in: html),
-                  let snippetRange = Range(match.range(at: 2), in: html) else { continue }
-
-            let rawHref = String(html[hrefRange])
-            let rawSnippet = String(html[snippetRange])
-
-            guard let targetURL = URLRedirectDecoder.decode(rawHref) else { continue }
-            let cleanSnippet = HTMLToMarkdownConverter.decodeHTMLEntities(rawSnippet).trimmingCharacters(in: .whitespacesAndNewlines)
-            let hostTitle = targetURL.host ?? targetURL.absoluteString
-
-            results.append(
-                WebSearchResult(
-                    title: hostTitle,
-                    url: targetURL,
-                    snippet: cleanSnippet,
-                    engine: .duckDuckGo,
-                    rank: rank
-                )
-            )
-            rank += 1
-        }
-        return results
-    }
-}
-
-// MARK: - BraveSearchScraper.swift
-public enum BraveSearchScraper {
-    private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
-
-    public static func search(query: String, session: URLSession = .shared) async throws -> [WebSearchResult] {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://search.brave.com/search?q=\(encoded)") else {
-            return []
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            return []
-        }
-
-        let html = String(decoding: data, as: UTF8.self)
-        return parse(html: html)
-    }
-
-    public static func parse(html: String) -> [WebSearchResult] {
-        var results: [WebSearchResult] = []
-        let pattern = #"<div\s+[^>]*class="[^"]*snippet[^"]*"[^>]*data-type="web"[^>]*>.*?<a\s+[^>]*href="([^"]+)"[^>]*>.*?<span[^>]*class="[^"]*title[^"]*"[^>]*>(.*?)<\/span>.*?<\/a>.*?<div\s+[^>]*class="[^"]*snippet-description[^"]*"[^>]*>(.*?)<\/div>"#
-
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
-            return []
-        }
-
-        let matches = regex.matches(in: html, options: [], range: NSRange(html.startIndex..., in: html))
-        var rank = 1
-
-        for match in matches.prefix(10) {
-            guard let urlRange = Range(match.range(at: 1), in: html),
-                  let titleRange = Range(match.range(at: 2), in: html),
-                  let descRange = Range(match.range(at: 3), in: html) else { continue }
-
-            let rawURL = String(html[urlRange])
-            let rawTitle = String(html[titleRange])
-            let rawDesc = String(html[descRange])
-
-            guard let targetURL = URL(string: rawURL) else { continue }
-            let cleanTitle = HTMLToMarkdownConverter.decodeHTMLEntities(rawTitle.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
-            let cleanSnippet = HTMLToMarkdownConverter.decodeHTMLEntities(rawDesc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
-
-            results.append(
-                WebSearchResult(
-                    title: cleanTitle,
-                    url: targetURL,
-                    snippet: cleanSnippet,
-                    engine: .brave,
-                    rank: rank
-                )
-            )
-            rank += 1
-        }
-        return results
-    }
-}
-
-// MARK: - YahooSearchScraper.swift
-public enum YahooSearchScraper {
-    private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-
-    public static func search(query: String, session: URLSession = .shared) async throws -> [WebSearchResult] {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://search.yahoo.com/search?p=\(encoded)&nojs=1") else {
-            return []
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            return []
-        }
-
-        let html = String(decoding: data, as: UTF8.self)
-        return parse(html: html)
-    }
-
-    public static func parse(html: String) -> [WebSearchResult] {
-        var results: [WebSearchResult] = []
-        let pattern = #"<h3\s+[^>]*class="[^"]*title[^"]*"[^>]*><a\s+[^>]*href="([^"]+)"[^>]*>(.*?)<\/a><\/h3>.*?<div\s+[^>]*class="[^"]*compText[^"]*"[^>]*>(.*?)<\/div>"#
-
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
-            return []
-        }
-
-        let matches = regex.matches(in: html, options: [], range: NSRange(html.startIndex..., in: html))
-        var rank = 1
-
-        for match in matches.prefix(10) {
-            guard let urlRange = Range(match.range(at: 1), in: html),
-                  let titleRange = Range(match.range(at: 2), in: html),
-                  let descRange = Range(match.range(at: 3), in: html) else { continue }
-
-            let rawURL = String(html[urlRange])
-            let rawTitle = String(html[titleRange])
-            let rawDesc = String(html[descRange])
-
-            guard let targetURL = URLRedirectDecoder.decode(rawURL) else { continue }
-            let cleanTitle = HTMLToMarkdownConverter.decodeHTMLEntities(rawTitle.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
-            let cleanSnippet = HTMLToMarkdownConverter.decodeHTMLEntities(rawDesc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
-
-            results.append(
-                WebSearchResult(
-                    title: cleanTitle,
-                    url: targetURL,
-                    snippet: cleanSnippet,
-                    engine: .yahoo,
-                    rank: rank
-                )
-            )
-            rank += 1
-        }
-        return results
-    }
-}
-
-// MARK: - AolSearchScraper.swift
-public enum AolSearchScraper {
-    private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-
-    public static func search(query: String, session: URLSession = .shared) async throws -> [WebSearchResult] {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://search.aol.com/aol/search?q=\(encoded)&nojs=1") else {
-            return []
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            return []
-        }
-
-        let html = String(decoding: data, as: UTF8.self)
-        return parse(html: html)
-    }
-
-    public static func parse(html: String) -> [WebSearchResult] {
-        var results: [WebSearchResult] = []
-        let pattern = #"<h3\s+[^>]*class="[^"]*title[^"]*"[^>]*><a\s+[^>]*href="([^"]+)"[^>]*>(.*?)<\/a><\/h3>.*?<div\s+[^>]*class="[^"]*compText[^"]*"[^>]*>(.*?)<\/div>"#
-
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
-            return []
-        }
-
-        let matches = regex.matches(in: html, options: [], range: NSRange(html.startIndex..., in: html))
-        var rank = 1
-
-        for match in matches.prefix(10) {
-            guard let urlRange = Range(match.range(at: 1), in: html),
-                  let titleRange = Range(match.range(at: 2), in: html),
-                  let descRange = Range(match.range(at: 3), in: html) else { continue }
-
-            let rawURL = String(html[urlRange])
-            let rawTitle = String(html[titleRange])
-            let rawDesc = String(html[descRange])
-
-            guard let targetURL = URLRedirectDecoder.decode(rawURL) else { continue }
-            let cleanTitle = HTMLToMarkdownConverter.decodeHTMLEntities(rawTitle.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
-            let cleanSnippet = HTMLToMarkdownConverter.decodeHTMLEntities(rawDesc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
-
-            results.append(
-                WebSearchResult(
-                    title: cleanTitle,
-                    url: targetURL,
-                    snippet: cleanSnippet,
-                    engine: .aol,
-                    rank: rank
-                )
-            )
-            rank += 1
-        }
-        return results
-    }
-}
-
-// MARK: - WikipediaEngine.swift
-public enum WikipediaEngine {
-    public static func search(query: String, session: URLSession = .shared) async throws -> [WebSearchResult] {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=\(encoded)&format=json&utf8=1") else {
-            return []
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue("Tinycast-Search/1.0", forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            return []
-        }
-
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let queryObj = json["query"] as? [String: Any],
-              let searchArr = queryObj["search"] as? [[String: Any]] else {
-            return []
-        }
-
-        var results: [WebSearchResult] = []
-        var rank = 1
-
-        for item in searchArr.prefix(5) {
-            guard let title = item["title"] as? String,
-                  let rawSnippet = item["snippet"] as? String,
-                  let pageURL = URL(string: "https://en.wikipedia.org/wiki/\(title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? title)") else {
-                continue
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                return []
             }
-
-            let cleanSnippet = HTMLToMarkdownConverter.decodeHTMLEntities(
-                rawSnippet.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            )
-
-            results.append(
-                WebSearchResult(
-                    title: "\(title) - Wikipedia",
-                    url: pageURL,
-                    snippet: cleanSnippet,
-                    engine: .wikipedia,
-                    rank: rank
-                )
-            )
-            rank += 1
-        }
-        return results
-    }
-}
-
-// MARK: - NewsRSSEngine.swift
-public enum NewsRSSEngine {
-    public static func search(query: String, session: URLSession = .shared) async throws -> [WebSearchResult] {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://news.google.com/rss/search?q=\(encoded)&hl=en-US&gl=US&ceid=US:en") else {
+            let html = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+            return parseDuckDuckGoHTML(html)
+        } catch {
             return []
         }
-
-        var request = URLRequest(url: url)
-        request.setValue("Tinycast-News/1.0", forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            return []
-        }
-
-        let xml = String(decoding: data, as: UTF8.self)
-        return parse(xml: xml)
     }
 
-    public static func parse(xml: String) -> [WebSearchResult] {
+    private func parseDuckDuckGoHTML(_ html: String) -> [WebSearchResult] {
         var results: [WebSearchResult] = []
-        let itemPattern = #"<item>.*?<title>(.*?)<\/title>.*?<link>(.*?)<\/link>.*?(?:<pubDate>(.*?)<\/pubDate>)?.*?(?:<description>(.*?)<\/description>)?.*?<\/item>"#
+        let resultBlockRegex = try? NSRegularExpression(
+            pattern: #"<div\s+class="result\s+results_links\s+results_links_deep[^"]*">(.*?)<\/div>\s*<\/div>\s*<\/div>"#,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        )
 
-        guard let regex = try? NSRegularExpression(pattern: itemPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
-            return []
-        }
+        let linkRegex = try? NSRegularExpression(
+            pattern: #"<a\s+class="result__snippet[^"]*"\s+href="([^"]+)"[^>]*>(.*?)<\/a>"#,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        )
 
-        let matches = regex.matches(in: xml, options: [], range: NSRange(xml.startIndex..., in: xml))
-        var rank = 1
+        let titleRegex = try? NSRegularExpression(
+            pattern: #"<a\s+class="result__url[^"]*"\s+href="([^"]+)"[^>]*>(.*?)<\/a>|<h2[^>]*>\s*<a\s+class="result__a[^"]*"\s+href="([^"]+)"[^>]*>(.*?)<\/a>"#,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        )
 
-        for match in matches.prefix(8) {
-            guard let titleRange = Range(match.range(at: 1), in: xml),
-                  let linkRange = Range(match.range(at: 2), in: xml) else { continue }
+        let matches = resultBlockRegex?.matches(in: html, range: NSRange(html.startIndex..., in: html)) ?? []
 
-            let rawTitle = String(xml[titleRange])
-            let rawLink = String(xml[linkRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        for match in matches {
+            guard let blockRange = Range(match.range(at: 1), in: html) else { continue }
+            let block = String(html[blockRange])
 
-            guard let url = URL(string: rawLink) else { continue }
-
+            var linkURL = ""
+            var title = ""
             var snippet = ""
-            if match.numberOfRanges > 4, let descRange = Range(match.range(at: 4), in: xml) {
-                let rawDesc = String(xml[descRange])
-                snippet = HTMLToMarkdownConverter.decodeHTMLEntities(
-                    rawDesc.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-                ).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
 
-            let cleanTitle = HTMLToMarkdownConverter.decodeHTMLEntities(rawTitle).trimmingCharacters(in: .whitespacesAndNewlines)
-
-            results.append(
-                WebSearchResult(
-                    title: cleanTitle,
-                    url: url,
-                    snippet: snippet.isEmpty ? cleanTitle : snippet,
-                    engine: .news,
-                    rank: rank
-                )
-            )
-            rank += 1
-        }
-        return results
-    }
-}
-
-// MARK: - WebSearchAggregator.swift
-/// Orchestrates multi-engine web searches with parallel tasks, timeouts, caching, and consensus scoring.
-public final class WebSearchAggregator: Sendable {
-    private let cache: WebSearchCacheStore
-    private let session: URLSession
-
-    public init(cache: WebSearchCacheStore = WebSearchCacheStore(), session: URLSession = .shared) {
-        self.cache = cache
-        self.session = session
-    }
-
-    public func search(
-        query: String,
-        engines: Set<WebSearchEngineType> = [.yahoo, .duckDuckGo, .news, .wikipedia],
-        timeoutSeconds: Double = 4.0
-    ) async -> [WebSearchResult] {
-        let parsed = WebSearchQuery(query: query)
-        let cacheKey = "\(parsed.category.rawValue):\(parsed.searchTerm)"
-
-        if let cached = await cache.get(key: cacheKey) {
-            return cached
-        }
-
-        let session = self.session
-        var selectedEngines = engines
-        if parsed.category == .wikipedia {
-            selectedEngines = [.wikipedia]
-        } else if parsed.category == .news {
-            selectedEngines = [.news, .yahoo, .duckDuckGo]
-        }
-
-        let engineResults: [[WebSearchResult]] = await withTaskGroup(of: [WebSearchResult]?.self) { group in
-            for engine in selectedEngines {
-                group.addTask {
-                    do {
-                        return try await withThrowingTaskGroup(of: [WebSearchResult].self) { innerGroup in
-                            innerGroup.addTask {
-                                switch engine {
-                                case .duckDuckGo:
-                                    return try await DuckDuckGoScraper.search(query: parsed.searchTerm, session: session)
-                                case .brave:
-                                    return try await BraveSearchScraper.search(query: parsed.searchTerm, session: session)
-                                case .aol:
-                                    return try await AolSearchScraper.search(query: parsed.searchTerm, session: session)
-                                case .yahoo:
-                                    return try await YahooSearchScraper.search(query: parsed.searchTerm, session: session)
-                                case .wikipedia:
-                                    return try await WikipediaEngine.search(query: parsed.searchTerm, session: session)
-                                case .news:
-                                    return try await NewsRSSEngine.search(query: parsed.searchTerm, session: session)
-                                }
-                            }
-                            innerGroup.addTask {
-                                try await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
-                                return []
-                            }
-                            return try await innerGroup.next() ?? []
-                        }
-                    } catch {
-                        return []
+            if let titleMatch = titleRegex?.firstMatch(in: block, range: NSRange(block.startIndex..., in: block)) {
+                if titleMatch.numberOfRanges > 3, let r = Range(titleMatch.range(at: 3), in: block), !r.isEmpty {
+                    linkURL = String(block[r])
+                    if let tRange = Range(titleMatch.range(at: 4), in: block) {
+                        title = stripHTMLTags(String(block[tRange]))
+                    }
+                } else if let r = Range(titleMatch.range(at: 1), in: block), !r.isEmpty {
+                    linkURL = String(block[r])
+                    if let tRange = Range(titleMatch.range(at: 2), in: block) {
+                        title = stripHTMLTags(String(block[tRange]))
                     }
                 }
             }
 
-            var aggregated: [[WebSearchResult]] = []
-            for await res in group {
-                if let res, !res.isEmpty {
-                    aggregated.append(res)
+            if let snippetMatch = linkRegex?.firstMatch(in: block, range: NSRange(block.startIndex..., in: block)),
+               let sRange = Range(snippetMatch.range(at: 2), in: block) {
+                snippet = stripHTMLTags(String(block[sRange]))
+            }
+
+            if linkURL.hasPrefix("//duckduckgo.com/l/?uddg=") {
+                if let parsed = extractActualURL(from: "https:" + linkURL) {
+                    linkURL = parsed
                 }
             }
-            return aggregated
+
+            if !title.isEmpty && !linkURL.isEmpty {
+                results.append(WebSearchResult(title: title.trimmingCharacters(in: .whitespacesAndNewlines), url: linkURL, snippet: snippet.trimmingCharacters(in: .whitespacesAndNewlines)))
+            }
         }
 
-        let scored = ConsensusScorer.score(engineResults: engineResults)
-        await cache.set(key: cacheKey, results: scored)
-        return scored
+        if results.isEmpty {
+            let altRegex = try? NSRegularExpression(
+                pattern: #"<a\s+class="result__a[^"]*"\s+href="([^"]+)"[^>]*>(.*?)<\/a>.*?<a\s+class="result__snippet[^"]*"[^>]*>(.*?)<\/a>"#,
+                options: [.caseInsensitive, .dotMatchesLineSeparators]
+            )
+            let altMatches = altRegex?.matches(in: html, range: NSRange(html.startIndex..., in: html)) ?? []
+            for match in altMatches {
+                guard match.numberOfRanges >= 4,
+                      let urlR = Range(match.range(at: 1), in: html),
+                      let titleR = Range(match.range(at: 2), in: html),
+                      let snipR = Range(match.range(at: 3), in: html) else { continue }
+
+                var linkURL = String(html[urlR])
+                if linkURL.hasPrefix("//duckduckgo.com/l/?uddg=") {
+                    if let parsed = extractActualURL(from: "https:" + linkURL) {
+                        linkURL = parsed
+                    }
+                }
+                let title = stripHTMLTags(String(html[titleR])).trimmingCharacters(in: .whitespacesAndNewlines)
+                let snippet = stripHTMLTags(String(html[snipR])).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                if !title.isEmpty && !linkURL.isEmpty {
+                    results.append(WebSearchResult(title: title, url: linkURL, snippet: snippet))
+                }
+            }
+        }
+
+        return results
+    }
+
+    private func extractActualURL(from ddgURLString: String) -> String? {
+        guard let url = URL(string: ddgURLString),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let uddg = components.queryItems?.first(where: { $0.name == "uddg" })?.value else {
+            return nil
+        }
+        return uddg
+    }
+
+    private func stripHTMLTags(_ str: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"<[^>]+>"#, options: []) else { return str }
+        let clean = regex.stringByReplacingMatches(in: str, options: [], range: NSRange(str.startIndex..., in: str), withTemplate: "")
+        return clean
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
     }
 }

@@ -53,12 +53,14 @@ struct SettingsBackup: Codable {
         var quicklinkConfirmsBeforeDelete: Bool?
         // `calendarEnabled` is absent: an import must not grant calendar access.
         var calendarShowInLauncher: Bool?
+        var calendarLauncherLimit: Int?
         // Carried: it narrows what is read rather than widening what may be reached.
         var calendarIncludesTomorrow: Bool?
         var joinWindowMinutes: Int?
         // `autoJoinMeetings` and `cameraPreview` are absent: an import must arm neither.
         var autoJoinConfirms: Bool?
         var menuBarEvents: Int?
+        var calendarMenuBarDisplay: Int?
         var menuBarLinkedEventsOnly: Bool?
         var hideCurrentEvent: Int?
         // Safe to carry: it silences a prompt rather than granting anything.
@@ -132,10 +134,12 @@ extension SettingsBackup {
             quicklinkSelectionFallback: s.quicklinkSelectionFallback.rawValue,
             quicklinkConfirmsBeforeDelete: s.quicklinkConfirmsBeforeDelete,
             calendarShowInLauncher: s.calendarShowInLauncher,
+            calendarLauncherLimit: s.calendarLauncherLimit.rawValue,
             calendarIncludesTomorrow: s.calendarIncludesTomorrow,
             joinWindowMinutes: s.joinWindowMinutes.rawValue,
             autoJoinConfirms: s.autoJoinConfirms,
             menuBarEvents: s.menuBarEvents.rawValue,
+            calendarMenuBarDisplay: s.calendarMenuBarDisplay.rawValue,
             menuBarLinkedEventsOnly: s.menuBarLinkedEventsOnly,
             hideCurrentEvent: s.hideCurrentEvent.rawValue,
             supportReminders: s.supportRemindersEnabled)
@@ -351,6 +355,10 @@ extension SettingsBackup {
             settings.calendarShowInLauncher = flag
             count += 1
         }
+        if let raw = s.calendarLauncherLimit, let limit = CalendarLauncherLimit(rawValue: raw) {
+            settings.calendarLauncherLimit = limit
+            count += 1
+        }
         if let flag = s.calendarIncludesTomorrow {
             settings.calendarIncludesTomorrow = flag
             count += 1
@@ -365,6 +373,12 @@ extension SettingsBackup {
         }
         if let raw = s.menuBarEvents, let lead = MenuBarEvents(rawValue: raw) {
             settings.menuBarEvents = lead
+            count += 1
+        }
+        if let raw = s.calendarMenuBarDisplay,
+            let display = CalendarMenuBarDisplay(rawValue: raw)
+        {
+            settings.calendarMenuBarDisplay = display
             count += 1
         }
         if let flag = s.menuBarLinkedEventsOnly {

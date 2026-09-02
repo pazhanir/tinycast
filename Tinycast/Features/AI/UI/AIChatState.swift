@@ -11,15 +11,6 @@ final class AIChatState {
     private(set) var notice: String?
     /// Images staged for the next message; they go out with whatever is typed next.
     private(set) var pendingImages: [ChatAttachment] = []
-    private(set) var stagedMention: AIMentionItem?
-
-    func stageMention(_ item: AIMentionItem) {
-        stagedMention = item
-    }
-
-    func clearStagedMention() {
-        stagedMention = nil
-    }
 
     /// Every path that consumes or drops the staged images moves this on, so a late decode knows
     @ObservationIgnored private(set) var stagingGeneration = 0
@@ -41,7 +32,6 @@ final class AIChatState {
     @discardableResult
     func send(
         _ input: String, using provider: any AIProvider, webSearch: Bool = false,
-        toolFilter: AIToolRegistry.ToolFilter = AIToolRegistry.ToolFilter(),
         instructions: String? = nil, contextBudget: Int = ChatSession.defaultTextBudget
     ) -> Bool {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -55,107 +45,23 @@ final class AIChatState {
         usage = nil
         history.save(session)
 
+        let request = AIRequest(
+            instructions: instructions,
+            messages: session.requestMessages(textBudget: contextBudget),
+            webSearch: webSearch)
+
         replyGeneration += 1
         let generation = replyGeneration
         replyTask = Task { [weak self, provider] in
             do {
-                var turn = 0
-                let maxTurns = 8
-                let registry = AIToolRegistry.shared
-                var accumulatedSearches: [ChatSearch] = []
-
-                while turn < maxTurns {
-                    turn += 1
-                    guard let self, !Task.isCancelled, self.replyGeneration == generation else { return }
-                    let canUseTools = (turn < maxTurns - 1)
-                    let availableTools = canUseTools ? registry.tools(matching: toolFilter) : []
-                    let currentRequest = AIRequest(
-                        instructions: instructions,
-                        messages: self.session.requestMessages(textBudget: contextBudget),
-                        webSearch: webSearch,
-                        tools: availableTools
-                    )
-
-                    var receivedToolCalls: [AIToolCall] = []
-
-                    for try await event in provider.stream(currentRequest) {
-                        guard !Task.isCancelled, self.replyGeneration == generation else {
-                            return
-                        }
-                        if case .toolCall(let call) = event {
-                            receivedToolCalls.append(call)
-                        } else {
-                            self.receive(event)
-                        }
+                for try await event in provider.stream(request) {
+                    guard let self, !Task.isCancelled, self.replyGeneration == generation else {
+                        return
                     }
-
-                    guard !Task.isCancelled, self.replyGeneration == generation else { return }
-
-                    if !receivedToolCalls.isEmpty {
-                        self.flushPendingText()
-                        var turnSearches: [ChatSearch] = []
-                        let turnAssistantID = self.session.messages.last(where: { $0.role == .assistant })?.id
-                        if let turnAssistantID {
-                            self.session.updateMessage(id: turnAssistantID) { msg in
-                                msg.toolCalls = receivedToolCalls
-                            }
-                        }
-                        for toolCall in receivedToolCalls {
-                            let (searchQuery, statusDesc) = Self.searchInfo(for: toolCall)
-                            let searchItem = ChatSearch(query: searchQuery, isComplete: false, textOffset: 0)
-                            turnSearches.append(searchItem)
-                            accumulatedSearches.append(searchItem)
-
-                            if let turnAssistantID {
-                                self.session.updateMessage(id: turnAssistantID) { msg in
-                                    msg.searches = turnSearches
-                                }
-                            }
-                            self.toolStatus = statusDesc
-
-                            let result = await registry.execute(call: toolCall)
-                            self.session.append(
-                                ChatMessage(
-                                    role: .tool,
-                                    text: result.output,
-                                    state: .complete,
-                                    toolCallID: result.callID
-                                )
-                            )
-
-                            if let idx = turnSearches.indices.last {
-                                turnSearches[idx].isComplete = true
-                            }
-                            if let idx = accumulatedSearches.indices.last {
-                                accumulatedSearches[idx].isComplete = true
-                            }
-                            if let turnAssistantID {
-                                self.session.updateMessage(id: turnAssistantID) { msg in
-                                    msg.searches = turnSearches
-                                    msg.state = .complete
-                                }
-                            }
-                        }
-                        self.toolStatus = nil
-                        self.session.append(
-                            ChatMessage(
-                                role: .assistant,
-                                text: "",
-                                state: .streaming
-                            )
-                        )
-                        self.history.save(self.session)
-                        continue
-                    } else {
-                        self.finishLast(state: .complete, fallback: "No response")
-                        break
-                    }
+                    self.receive(event)
                 }
-
-                guard let self, !Task.isCancelled, self.replyGeneration == generation,
-                    self.isStreaming
-                else { return }
-                self.finishLast(state: .failed, fallback: "The response ended unexpectedly.")
+            } catch is CancellationError {
+                // Cancelled explicitly; `cancel()` already marked the message.
             } catch {
                 guard let self, !Task.isCancelled, self.replyGeneration == generation,
                     self.isStreaming
@@ -195,7 +101,6 @@ final class AIChatState {
 
     private func clearStaging() {
         pendingImages = []
-        stagedMention = nil
         stagingGeneration += 1
     }
 
@@ -251,13 +156,8 @@ final class AIChatState {
         clearStaging()
     }
 
-    private var toolStatus: String? = nil
-
     /// The line shown in the empty streaming bubble while nothing has arrived yet.
-    var liveStatus: String? {
-        if let toolStatus { return toolStatus }
-        return isThinking ? "Thinking…" : nil
-    }
+    var liveStatus: String? { isThinking ? "Thinking…" : nil }
 
     var lastAssistantText: String? {
         session.messages.last(where: { $0.role == .assistant && !$0.text.isEmpty })?.text
@@ -286,12 +186,26 @@ final class AIChatState {
             }
             message.searches = message.searches.map { Self.completed($0) }
             session.replaceLast(with: message)
+        case .toolCall(let id, let origin, let title):
+            flushPendingText()
+            guard var message = session.messages.last, message.role == .assistant else { return }
+            isThinking = false
+            message.toolUses.append(
+                ChatToolUse(
+                    callID: id, origin: origin, title: title, state: .running,
+                    textOffset: message.text.count))
+            session.replaceLast(with: message)
+        case .toolResult(let id, let isError):
+            guard var message = session.messages.last, message.role == .assistant else { return }
+            guard let index = message.toolUses.lastIndex(where: { $0.callID == id }) else { return }
+            message.toolUses[index].state = isError ? .failed : .completed
+            session.replaceLast(with: message)
+        case .toolCallRequested:
+            break
         case .usage(let usage):
             self.usage = usage
-        case .toolCall, .toolExecuting:
-            break
         case .finished:
-            break
+            finishLast(state: .complete, fallback: "No response")
         }
     }
 
@@ -339,6 +253,8 @@ final class AIChatState {
         }
         message.state = state
         message.searches = message.searches.map { Self.completed($0) }
+        // A call still running when the turn ends never reported back, whatever ended the turn.
+        message.toolUses = message.toolUses.map { Self.settled($0) }
         session.replaceLast(with: message)
         history.save(session)
         isStreaming = false
@@ -354,37 +270,11 @@ extension AIChatState {
         return search
     }
 
-    fileprivate static func searchInfo(for call: AIToolCall) -> (query: String, status: String) {
-        var queryParam = ""
-        if let data = call.argumentsJSON.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let q = json["query"] as? String { queryParam = q }
-            else if let u = json["url"] as? String { queryParam = u }
-            else if let e = json["expression"] as? String { queryParam = e }
-            else if let l = json["location"] as? String { queryParam = l }
-            else if let firstValue = json.values.first as? String { queryParam = firstValue }
-        }
-        if queryParam == "{}" || queryParam == "[]" { queryParam = "" }
-
-        switch call.name {
-        case "web_search":
-            return (query: queryParam, status: "Searching the web…")
-        case "web_fetch":
-            return (query: "fetch: \(queryParam)", status: "Reading webpage…")
-        case "calculate":
-            return (query: "calc: \(queryParam)", status: "Calculating…")
-        case "get_weather":
-            let loc = queryParam.isEmpty ? "Current Location" : queryParam
-            return (query: "weather: \(loc)", status: "Checking weather…")
-        case "get_location":
-            return (query: "location: Current Location", status: "Locating…")
-        default:
-            if let extInfo = AIToolRegistry.shared.extensionInfo(for: call.name) {
-                let formattedQuery = "ext:\(extInfo.extensionTitle)|\(extInfo.iconPath ?? ""):\(queryParam)"
-                return (query: formattedQuery, status: "Using \(extInfo.extensionTitle)…")
-            }
-            return (query: "\(call.name): \(queryParam)", status: "Using \(call.name)…")
-        }
+    fileprivate static func settled(_ use: ChatToolUse) -> ChatToolUse {
+        guard use.state == .running else { return use }
+        var use = use
+        use.state = .failed
+        return use
     }
 }
 

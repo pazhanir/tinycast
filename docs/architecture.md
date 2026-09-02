@@ -81,7 +81,7 @@ app: the stores (`AppIndex`, `ClipboardStore`, `SnippetsStore`, `QuicklinkStore`
 (`ClipboardManager`,
 `HotKeyManager`, `HyperKeyTap`, `RunningAppsMonitor`, `SnippetKeywordListener`), the shared state
 (`AppSettings`, `PaletteState`, `FileSearchSession`, `UninstallSession`,
-`QuicklinkArgumentSession`, `MeetingClock`), `NotesStore`, the eighteen feature coordinators, and the
+`QuicklinkArgumentSession`, `MeetingClock`), `NotesStore`, the twenty feature coordinators, and the
 window controllers.
 
 `AppDelegate.applicationDidFinishLaunching` calls `AppCore.shared.start()` and nothing else. That is the
@@ -100,8 +100,9 @@ New long-lived state belongs on `AppCore`, wired in `start()`. Do not create a c
 
 ## Entry points and windows
 
-`TinycastApp` (`@main`) declares only a `MenuBarExtra` scene; everything else visible is driven
-imperatively from AppKit.
+`TinycastApp` (`@main`) declares only two `MenuBarExtra` scenes — Tinycast's own item and the
+calendar's, each inserted by one preference and independent of the other; everything else visible is
+driven imperatively from AppKit.
 
 - **Command palette** — a borderless floating `NSPanel` (`Palette/PalettePanel.swift`) hosting SwiftUI
   via `NSHostingView`, managed by `PaletteWindowController`. It toggles between a compact bar and the

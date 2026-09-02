@@ -38,15 +38,10 @@ struct ChatSession: Equatable, Sendable {
     func requestMessages(textBudget: Int = Self.defaultTextBudget) -> [AIMessage] {
         Self.boundedContext(
             messages.compactMap { message in
-                guard message.role == .user || message.role == .tool || message.state == .complete else { return nil }
-                switch message.role {
-                case .user:
-                    return AIMessage(role: .user, text: message.text, images: message.images)
-                case .assistant:
-                    return AIMessage(role: .assistant, text: message.text, toolCalls: message.toolCalls)
-                case .tool:
-                    return AIMessage(role: .tool, text: message.text, toolCallID: message.toolCallID)
-                }
+                guard message.role == .user || message.state == .complete else { return nil }
+                return AIMessage(
+                    role: message.role == .user ? .user : .assistant,
+                    text: message.text, images: message.images)
             }, textBudget: textBudget)
     }
 
@@ -61,24 +56,21 @@ struct ChatSession: Equatable, Sendable {
         var tail: [AIMessage] = []
         for message in messages[(newest + 1)...] {
             remaining -= message.text.utf8.count
-            tail.append(AIMessage(role: message.role, text: message.text, toolCalls: message.toolCalls, toolCallID: message.toolCallID))
+            tail.append(AIMessage(role: message.role, text: message.text))
         }
         var head: [AIMessage] = []
         for message in messages[..<newest].reversed() {
             remaining -= message.text.utf8.count
             guard remaining >= 0 else { break }
-            head.append(AIMessage(role: message.role, text: message.text, toolCalls: message.toolCalls, toolCallID: message.toolCallID))
+            head.append(AIMessage(role: message.role, text: message.text))
         }
-        var trimmedHead = Array(head.reversed())
-        // The slice opens with a user turn; drop any partial/orphaned turns from the head.
-        while let first = trimmedHead.first, first.role != .user {
-            trimmedHead.removeFirst()
-        }
+        // The slice opens with the user turn that prompted it; an orphaned reply reads as noise.
+        while head.last?.role == .assistant { head.removeLast() }
         let prompt = messages[newest]
         let bounded = AIMessage(
             role: prompt.role, text: prompt.text,
             images: AIAttachmentBudget.bounded(prompt.images))
-        return trimmedHead + [bounded] + tail
+        return head.reversed() + [bounded] + tail
     }
 
     mutating func append(_ message: ChatMessage) {
@@ -90,12 +82,6 @@ struct ChatSession: Equatable, Sendable {
         guard !messages.isEmpty else { return }
         messages[messages.count - 1] = message
         updatedAt = max(updatedAt, now)
-    }
-
-    mutating func updateMessage(id: UUID, mutate: (inout ChatMessage) -> Void) {
-        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
-        mutate(&messages[index])
-        updatedAt = max(updatedAt, Date())
     }
 
     private static func summary(_ text: String, limit: Int) -> String {

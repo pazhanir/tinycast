@@ -18,6 +18,18 @@ struct CalendarSettingsView: View {
                 isEnabled: enabledBinding,
                 showsInLauncher: $settings.calendarShowInLauncher)
 
+            Section {
+                Picker(selection: $settings.calendarLauncherLimit) {
+                    ForEach(CalendarLauncherLimit.allCases) { limit in
+                        Text(limit.title).tag(limit)
+                    }
+                } label: {
+                    Text("Upcoming meetings in launcher")
+                    Text("Choose how many upcoming meetings appear alongside apps and commands.")
+                }
+            }
+            .settingsEnabled(settings.calendarEnabled && settings.calendarShowInLauncher)
+
             if store.access == .denied {
                 Section {
                     SettingsRow(
@@ -67,28 +79,42 @@ struct CalendarSettingsView: View {
             .settingsEnabled(settings.calendarEnabled)
 
             Section {
+                Picker(selection: $settings.calendarMenuBarDisplay) {
+                    ForEach(CalendarMenuBarDisplay.allCases) { display in
+                        Text(display.title).tag(display)
+                    }
+                } label: {
+                    Text("Calendar in Menu Bar")
+                    Text(
+                        "Its own menu bar item, showing a meeting icon or its title and countdown."
+                    )
+                }
                 Picker(selection: $settings.menuBarEvents) {
                     ForEach(MenuBarEvents.allCases) { lead in
                         Text(lead.title).tag(lead)
                     }
                 } label: {
-                    Text("Show Events in Menu Bar")
-                    Text("Show current or upcoming events in the menu bar.")
+                    Text("Show Upcoming Events")
+                    Text(
+                        "When the next event reaches the menu bar. Today includes the next 30 "
+                            + "minutes after midnight."
+                    )
                 }
+                .settingsEnabled(settings.calendarMenuBarDisplay != .disabled)
                 Toggle(isOn: $settings.menuBarLinkedEventsOnly) {
                     Text("Only show events with meetings")
                 }
                 .toggleStyle(.checkbox)
-                .settingsEnabled(settings.menuBarEvents != .never)
+                .settingsEnabled(settings.calendarMenuBarDisplay != .disabled)
                 Picker(selection: $settings.hideCurrentEvent) {
                     ForEach(HideCurrentEvent.allCases) { hide in
                         Text(hide.title).tag(hide)
                     }
                 } label: {
                     Text("Hide Current Event")
-                    Text("Hide a started event automatically, or after the time you choose.")
+                    Text("Choose whether to hide a started event or show its time left.")
                 }
-                .settingsEnabled(settings.menuBarEvents != .never)
+                .settingsEnabled(settings.calendarMenuBarDisplay != .disabled)
             } header: {
                 Text("Menu Bar")
             }

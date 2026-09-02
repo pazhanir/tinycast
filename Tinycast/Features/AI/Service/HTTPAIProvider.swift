@@ -1,74 +1,60 @@
 import Foundation
 
-private func logDebug(_ message: String) {
-    let line = "[\(Date())] \(message)\n"
-    if let data = line.data(using: .utf8) {
-        if let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: "/tmp/tinycast-ai.log")) {
-            handle.seekToEndOfFile()
-            handle.write(data)
-            try? handle.close()
-        } else {
-            try? data.write(to: URL(fileURLWithPath: "/tmp/tinycast-ai.log"))
-        }
-    }
-}
-
 struct HTTPAIProvider: AIProvider {
-    let configuration: AIHTTPConfiguration
-    let apiKey: String
-    private let session: URLSession
+    private let configuration: AIHTTPConfiguration
+    private let apiKey: String
 
-    init(
-        configuration: AIHTTPConfiguration, apiKey: String,
-        session: URLSession = URLSession(configuration: .ephemeral)
-    ) {
+    init(configuration: AIHTTPConfiguration, apiKey: String) {
         self.configuration = configuration
         self.apiKey = apiKey
-        self.session = session
     }
 
-    func stream(_ input: AIRequest) -> AsyncThrowingStream<AIStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task {
+    func stream(_ request: AIRequest) -> AIProviderStream {
+        AIProviderStream { continuation in
+            // Detached on purpose: the byte loop and JSON decoding never touch the main actor.
+            let task = Task.detached {
+                let session = Self.makeSession()
+                defer { session.invalidateAndCancel() }
                 do {
-                    let request = try buildRequest(for: input)
-                    if let bodyData = request.httpBody, let bodyString = String(data: bodyData, encoding: .utf8) {
-                        logDebug("REQUEST URL: \(request.url?.absoluteString ?? "")")
-                        logDebug("REQUEST HEADERS: \(request.allHTTPHeaderFields ?? [:])")
-                        logDebug("REQUEST BODY: \(bodyString)")
+                    let urlRequest = try makeURLRequest(request)
+                    let (bytes, response) = try await session.bytes(for: urlRequest)
+                    guard let response = response as? HTTPURLResponse else {
+                        throw AIProviderError.responseFailed(
+                            "The provider returned an invalid HTTP response.")
                     }
-                    let (asyncBytes, response) = try await session.bytes(for: request)
-                    guard let http = response as? HTTPURLResponse else {
-                        logDebug("RESPONSE NOT HTTP: \(response)")
-                        throw AIProviderError.responseFailed("Invalid response from server.")
-                    }
-                    logDebug("RESPONSE STATUS: \(http.statusCode)")
-                    logDebug("RESPONSE HEADERS: \(http.allHeaderFields)")
-                    guard (200...299).contains(http.statusCode) else {
-                        var body = ""
-                        for try await line in asyncBytes.lines {
-                            body += line + "\n"
-                        }
-                        logDebug("NON-200 BODY: \(body)")
-                        throw AIStreamDecoder.parseError(
-                            from: body, status: http.statusCode, shape: configuration.shape)
+                    guard response.statusCode == 200 else {
+                        throw AIProviderError.responseFailed(Self.statusMessage(response))
                     }
                     var decoder = AIStreamDecoder(shape: configuration.shape)
-                    for try await line in asyncBytes.lines {
-                        guard !Task.isCancelled else { break }
-                        logDebug("STREAM LINE: \(line)")
-                        for event in try decoder.feed(line: line) {
-                            logDebug("STREAM EVENT: \(event)")
-                            continuation.yield(event)
+                    var chunk = Data()
+                    chunk.reserveCapacity(2_048)
+                    // Per line, not per 2 KB: a short reply must show before the stream closes.
+                    for try await byte in bytes {
+                        try Task.checkCancellation()
+                        chunk.append(byte)
+                        if byte == 0x0A {
+                            for event in try decoder.feed(chunk) { continuation.yield(event) }
+                            chunk.removeAll(keepingCapacity: true)
+                            if decoder.isTerminal { break }
                         }
                     }
-                    for event in try decoder.finish() {
-                        logDebug("FINISH EVENT: \(event)")
-                        continuation.yield(event)
+                    if !chunk.isEmpty, !decoder.isTerminal {
+                        for event in try decoder.feed(chunk) { continuation.yield(event) }
+                    }
+                    if !decoder.isTerminal {
+                        for event in try decoder.finish() { continuation.yield(event) }
+                    }
+                    guard decoder.isTerminal else {
+                        throw AIProviderError.responseFailed(
+                            "The connection closed before the response completed.")
                     }
                     continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch let error as URLError {
+                    continuation.finish(
+                        throwing: AIProviderError.responseFailed(Self.networkMessage(error.code)))
                 } catch {
-                    logDebug("STREAM CAUGHT ERROR: \(error)")
                     continuation.finish(throwing: error)
                 }
             }
@@ -76,267 +62,70 @@ struct HTTPAIProvider: AIProvider {
         }
     }
 
-    private func buildRequest(for input: AIRequest) throws -> URLRequest {
+    private func makeURLRequest(_ input: AIRequest) throws -> URLRequest {
         var request = URLRequest(url: configuration.endpointURL)
         request.httpMethod = "POST"
+        request.timeoutInterval = 90
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let body: Any
-        switch configuration.shape {
-        case .openAICompatible:
-            if !apiKey.isEmpty {
-                request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            }
-            if configuration.provider == .openRouter {
-                request.setValue(Bundle.main.appDisplayName, forHTTPHeaderField: "X-OpenRouter-Title")
-            }
-            var messages = Self.buildOpenAIMessages(input.messages)
-            if let instructions = input.instructions?.nonEmpty {
-                messages.insert(["role": "system", "content": instructions], at: 0)
-            }
-            var value: [String: Any] = [
-                "model": configuration.model,
-                "messages": messages,
-                "stream": true
-            ]
-            if !input.tools.isEmpty {
-                let toolSchemas: [[String: Any]] = input.tools.compactMap { tool in
-                    guard let data = tool.parametersJSON.data(using: .utf8),
-                          let schema = try? JSONSerialization.jsonObject(with: data) else { return nil }
-                    return [
-                        "type": "function",
-                        "function": [
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": schema
-                        ]
-                    ]
-                }
-                if !toolSchemas.isEmpty { value["tools"] = toolSchemas }
-            }
-            // OpenRouter's own search layer, so it works for every model it routes.
-            if input.webSearch, configuration.provider == .openRouter {
-                value["plugins"] = [["id": "web"]]
-            }
-            body = value
-        case .anthropic:
-            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-            let systemParts =
-                ([input.instructions]
-                + input.messages.compactMap {
-                    $0.role == .system ? $0.text : nil
-                }).compactMap { $0?.nonEmpty }
-            var value: [String: Any] = [
-                "model": configuration.model,
-                "messages": Self.buildAnthropicMessages(input.messages),
-                "max_tokens": input.maxOutputTokens,
-                "stream": true
-            ]
-            if !input.tools.isEmpty {
-                let toolSchemas: [[String: Any]] = input.tools.compactMap { tool in
-                    guard let data = tool.parametersJSON.data(using: .utf8),
-                          let schema = try? JSONSerialization.jsonObject(with: data) else { return nil }
-                    return [
-                        "name": tool.name,
-                        "description": tool.description,
-                        "input_schema": schema
-                    ]
-                }
-                if !toolSchemas.isEmpty { value["tools"] = toolSchemas }
-            }
-            if !systemParts.isEmpty { value["system"] = systemParts.joined(separator: "\n\n") }
-            body = value
-        }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        applyAuthentication(to: &request)
+        request.httpBody = try JSONSerialization.data(
+            withJSONObject: AIRequestBody.make(input, configuration: configuration))
         return request
     }
 
-    private static func buildOpenAIMessages(_ messages: [AIMessage]) -> [[String: Any]] {
-        var result: [[String: Any]] = []
-        var validToolCallIDs: Set<String> = []
-
-        for message in messages {
-            if message.role == .system { continue }
-
-            if message.role == .tool {
-                let callID = AIToolCall.sanitizeID(message.toolCallID ?? "")
-                if validToolCallIDs.contains(callID) {
-                    result.append([
-                        "role": "tool",
-                        "tool_call_id": callID,
-                        "content": message.text
-                    ])
-                } else if let text = message.text.nonEmpty {
-                    result.append([
-                        "role": "user",
-                        "content": text
-                    ])
-                }
-                continue
+    /// Every route's credential and its own identifying headers; the body knows none of this.
+    private func applyAuthentication(to request: inout URLRequest) {
+        switch configuration.shape {
+        case .openAICompatible:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            if configuration.provider == .gemini {
+                request.setValue(Self.googleClientHeader, forHTTPHeaderField: "x-goog-api-client")
+            } else if configuration.provider == .openRouter {
+                request.setValue(Bundle.main.appDisplayName, forHTTPHeaderField: "X-OpenRouter-Title")
             }
-
-            if message.role == .assistant {
-                if !message.toolCalls.isEmpty {
-                    var msg: [String: Any] = ["role": "assistant"]
-                    if let text = message.text.nonEmpty {
-                        msg["content"] = text
-                    } else {
-                        msg["content"] = NSNull()
-                    }
-                    msg["tool_calls"] = message.toolCalls.map { call in
-                        validToolCallIDs.insert(call.id)
-                        return [
-                            "id": call.id,
-                            "type": "function",
-                            "function": [
-                                "name": call.name,
-                                "arguments": call.argumentsJSON
-                            ]
-                        ]
-                    }
-                    result.append(msg)
-                } else if let text = message.text.nonEmpty {
-                    result.append([
-                        "role": "assistant",
-                        "content": text
-                    ])
-                }
-                continue
-            }
-
-            if message.role == .user {
-                if message.images.isEmpty {
-                    if let text = message.text.nonEmpty {
-                        result.append(["role": "user", "content": text])
-                    }
-                } else {
-                    var parts: [[String: Any]] = []
-                    if let text = message.text.nonEmpty {
-                        parts.append(["type": "text", "text": text])
-                    }
-                    for image in message.images {
-                        parts.append([
-                            "type": "image_url",
-                            "image_url": [
-                                "url": "data:\(image.mimeType);base64,\(image.data.base64EncodedString())"
-                            ]
-                        ])
-                    }
-                    if !parts.isEmpty {
-                        result.append(["role": "user", "content": parts])
-                    }
-                }
-            }
-        }
-
-        while let first = result.first, (first["role"] as? String) == "tool" {
-            result.removeFirst()
-        }
-
-        return result
-    }
-
-    private static func buildAnthropicMessages(_ messages: [AIMessage]) -> [[String: Any]] {
-        var result: [[String: Any]] = []
-        var lastAssistantToolUseIDs: Set<String> = []
-
-        for message in messages {
-            if message.role == .system { continue }
-
-            if message.role == .tool {
-                let callID = AIToolCall.sanitizeID(message.toolCallID ?? "")
-                if lastAssistantToolUseIDs.contains(callID) {
-                    let toolResultBlock: [String: Any] = [
-                        "type": "tool_result",
-                        "tool_use_id": callID,
-                        "content": message.text
-                    ]
-                    appendUserBlock(toolResultBlock, to: &result)
-                } else if let text = message.text.nonEmpty {
-                    appendUserBlock(["type": "text", "text": text], to: &result)
-                }
-                continue
-            }
-
-            if message.role == .assistant {
-                var content: [[String: Any]] = []
-                if let text = message.text.nonEmpty {
-                    content.append(["type": "text", "text": text])
-                }
-                var toolUseIDs: Set<String> = []
-                for call in message.toolCalls {
-                    let inputObj: Any = {
-                        guard let data = call.argumentsJSON.data(using: .utf8),
-                              let json = try? JSONSerialization.jsonObject(with: data) else { return [:] }
-                        return json
-                    }()
-                    content.append([
-                        "type": "tool_use",
-                        "id": call.id,
-                        "name": call.name,
-                        "input": inputObj
-                    ])
-                    toolUseIDs.insert(call.id)
-                }
-                lastAssistantToolUseIDs = toolUseIDs
-                guard !content.isEmpty else { continue }
-
-                if let last = result.last, (last["role"] as? String) == "assistant",
-                   var existingContent = last["content"] as? [[String: Any]] {
-                    existingContent.append(contentsOf: content)
-                    result[result.count - 1]["content"] = existingContent
-                } else {
-                    result.append(["role": "assistant", "content": content])
-                }
-                continue
-            }
-
-            if message.role == .user {
-                lastAssistantToolUseIDs = []
-                var parts: [[String: Any]] = []
-                if let text = message.text.nonEmpty {
-                    parts.append(["type": "text", "text": text])
-                }
-                for image in message.images {
-                    parts.append([
-                        "type": "image",
-                        "source": [
-                            "type": "base64",
-                            "media_type": image.mimeType,
-                            "data": image.data.base64EncodedString()
-                        ]
-                    ])
-                }
-                guard !parts.isEmpty else { continue }
-                for part in parts {
-                    appendUserBlock(part, to: &result)
-                }
-            }
-        }
-
-        while let first = result.first, (first["role"] as? String) != "user" {
-            result.removeFirst()
-        }
-
-        return result
-    }
-
-    private static func appendUserBlock(_ block: [String: Any], to result: inout [[String: Any]]) {
-        if let last = result.last, (last["role"] as? String) == "user",
-           var existingContent = last["content"] as? [[String: Any]] {
-            existingContent.append(block)
-            result[result.count - 1]["content"] = existingContent
-        } else {
-            result.append(["role": "user", "content": [block]])
+        case .anthropic:
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         }
     }
-}
 
-extension String {
-    fileprivate var nonEmpty: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : self
+    private static var googleClientHeader: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        return "tinycast-oai/\(version)"
+    }
+
+    private static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        return URLSession(configuration: configuration)
+    }
+
+    private static func statusMessage(_ response: HTTPURLResponse) -> String {
+        switch response.statusCode {
+        case 401, 403:
+            return "API key rejected — check it in Settings."
+        case 429:
+            guard let retryAfter = response.value(forHTTPHeaderField: "Retry-After"),
+                let seconds = Int(retryAfter), seconds >= 0
+            else { return "Rate limit reached — try again later." }
+            return "Rate limit reached — retry after \(seconds) seconds."
+        case 500...599:
+            return "The provider is temporarily unavailable (HTTP \(response.statusCode))."
+        default:
+            return "The provider rejected the model or request (HTTP \(response.statusCode))."
+        }
+    }
+
+    private static func networkMessage(_ code: URLError.Code) -> String {
+        switch code {
+        case .networkConnectionLost: return "The network connection was lost."
+        case .notConnectedToInternet: return "No internet connection."
+        case .timedOut: return "The provider took too long to respond."
+        case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+            return "The provider could not be reached."
+        default: return "The network request failed."
+        }
     }
 }
