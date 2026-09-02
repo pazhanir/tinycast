@@ -27,6 +27,17 @@ struct MCPSettingsSection: View {
                 Button("Add MCP Server…", systemImage: "plus") {
                     editor = MCPServerEditorTarget(server: MCPServer(), isNew: true)
                 }
+                .sheet(item: $editor) { target in
+                    MCPServerEditor(target: target, onSave: save, onCancel: { editor = nil })
+                }
+                .confirmationDialog(
+                    "Remove \(pendingRemoval?.title ?? "this server")?", isPresented: removalBinding,
+                    presenting: pendingRemoval
+                ) { server in
+                    Button("Remove", role: .destructive) { remove(server) }
+                } message: { _ in
+                    Text("Its tools stop being offered, and its stored credentials are deleted.")
+                }
             }
             .settingsEnabled(appSettings.mcpEnabled)
         } header: {
@@ -39,17 +50,6 @@ struct MCPSettingsSection: View {
             )
             .font(.caption)
             .foregroundStyle(.secondary)
-        }
-        .sheet(item: $editor) { target in
-            MCPServerEditor(target: target, onSave: save, onCancel: { editor = nil })
-        }
-        .confirmationDialog(
-            "Remove \(pendingRemoval?.title ?? "this server")?", isPresented: removalBinding,
-            presenting: pendingRemoval
-        ) { server in
-            Button("Remove", role: .destructive) { remove(server) }
-        } message: { _ in
-            Text("Its tools stop being offered, and its stored credentials are deleted.")
         }
     }
 

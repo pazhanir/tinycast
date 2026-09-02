@@ -36,9 +36,11 @@ struct AISettingsView: View {
                 systemPromptSection
                 chatGPTSection
                 apiConnectionsSection
-                MCPSettingsSection()
             }
             .settingsEnabled(appSettings.aiEnabled)
+
+            MCPSettingsSection()
+                .settingsEnabled(appSettings.aiEnabled)
         }
         .formStyle(.grouped)
         .sheet(item: $editor) { target in
