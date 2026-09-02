@@ -45,7 +45,7 @@ final class AIChatCoordinator {
     }
 
     func applyRetention() {
-        guard settings.aiEnabled,\
+        guard settings.aiEnabled,
             let cutoff = core.aiSettings.retention.cutoff(from: Date())
         else { return }
         core.chatHistory.prune(before: cutoff)
@@ -54,7 +54,7 @@ final class AIChatCoordinator {
     func showChat() {
         guard settings.aiEnabled else { return }
         // Not `togglePalette`: the open policy decides a chat only on the way in.
-        guard !paletteCoordinator.isShowing(.ai) else {\
+        guard !paletteCoordinator.isShowing(.ai) else {
             paletteCoordinator.hidePalette()
             return
         }
@@ -323,44 +323,125 @@ final class AIChatCoordinator {
         }
     }
 
-    var selectedModelOption: AIModelOption? {
-        core.aiSettings.defaultModel.flatMap { selected in
-            modelOptions.first { $0.id == selected }
+    /// Fetches the list so the title is a name, and a default can resolve without Settings.
+    /// What entering chat costs once: the model list resolved, and the servers connected.
+    func prepareForChat() {
+        warmUpModelList()
+        core.mcpCoordinator.warmUp()
+    }
+
+    func warmUpModelList() {
+        let stored = core.aiSettings.defaultModel
+        if stored == nil {
+            prepareModelSwitcher()
+            resolveDefaultModel()
+            // On-device settles it here; only a route yet to report in is worth waiting for.
+            if core.aiSettings.defaultModel == nil { awaitModelList() }
+            return
         }
+        guard case .chatGPT? = stored else { return }
+        prepareModelSwitcher()
+    }
+
+    /// Not only in Settings: a signed-in subscription must not send the reader there to pick.
+    func resolveDefaultModel() {
+        core.aiSettings.resolveDefaultModel()
+        guard core.aiSettings.defaultModel == nil, let first = modelOptions.first else { return }
+        core.aiSettings.select(first.selection)
+    }
+
+    /// A subscription's model list arrives after the screen is up, so the empty state waits
+    private func awaitModelList() {
+        withObservationTracking {
+            _ = core.chatGPTSubscription.models
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self, self.core.aiSettings.defaultModel == nil else { return }
+                self.resolveDefaultModel()
+                if self.core.aiSettings.defaultModel == nil { self.awaitModelList() }
+            }
+        }
+    }
+
+    private var selectedModelOption: AIModelOption? {
+        guard let selected = core.aiSettings.defaultModel else { return nil }
+        return modelOptions.first { $0.matches(selected) }
     }
 
     func selectModel(_ option: AIModelOption) {
-        core.aiSettings.defaultModel = option.id
+        core.aiSettings.select(option.selection)
+    }
+
+    func prepareModelSwitcher() {
+        if core.chatGPTSubscription.phase == .idle {
+            core.chatGPTSubscription.refresh()
+        }
     }
 
     func showSettings() {
+        paletteCoordinator.hidePalette(restoreFocus: false)
         settingsCoordinator.showSettings(tab: .ai)
     }
 
-    func prepareForChat() {
-        core.chatGPTSubscription.refreshModelsIfNeeded()
-        Task { [mcp = core.mcpCoordinator] in
-            await mcp.prepare()
+    func availability() -> String? {
+        do {
+            _ = try core.aiProvider()
+            return nil
+        } catch {
+            return error.localizedDescription
         }
     }
+}
 
-    func availability() -> String? {
-        guard let selected = core.aiSettings.defaultModel else {
-            return "No model selected. Choose one to start."
+struct AIModelOption: Identifiable {
+    let selection: AIModelSelection
+    let title: String
+    let sourceTitle: String
+    let menuIcon: PopoverMenuIcon
+
+    static let appleIntelligenceIcon = PopoverMenuIcon.symbol("apple.intelligence")
+
+    /// An unrecognised model keeps the generic sparkle rather than borrowing someone's mark.
+    static func icon(_ brand: AIBrand?) -> PopoverMenuIcon {
+        brand.map { .asset($0.assetName) } ?? .symbol("sparkles")
+    }
+
+    /// Every route the Mac can reach, on-device first: it is the one an unconfigured Mac has.
+    static func catalog(
+        appleIntelligence: Bool,
+        chatGPT: [ChatGPTSubscription.Model],
+        connections: [AIConnection]
+    ) -> [AIModelOption] {
+        let onDevice =
+            appleIntelligence
+            ? [
+                AIModelOption(
+                    selection: .appleIntelligence, title: AppleIntelligence.title,
+                    sourceTitle: "On device", menuIcon: appleIntelligenceIcon)
+            ] : []
+        let subscription = chatGPT.map { model in
+            AIModelOption(
+                selection: .chatGPT(model: model.id, effort: model.resolvedEffort(nil)),
+                title: model.name,
+                sourceTitle: "ChatGPT",
+                menuIcon: .asset(AIBrand.openAI.assetName))
         }
-        switch selected {
-        case .appleIntelligence:
-            return AppleIntelligenceProvider.status().message
-        case .chatGPT:
-            return core.chatGPTSubscription.status.unavailabilityMessage
-        case .api(let connectionID, _):
-            guard let connection = core.aiSettings.connection(id: connectionID) else {
-                return "AI provider connection is missing."
+        let api = connections.flatMap { connection in
+            connection.models.map { model in
+                AIModelOption(
+                    selection: .api(connection: connection.id, model: model),
+                    title: model,
+                    sourceTitle: connection.title,
+                    menuIcon: icon(AIBrand.resolve(provider: connection.provider, model: model)))
             }
-            guard !connection.apiKey.isEmpty else {
-                return "API key missing for \(connection.provider.displayName)."
-            }
-            return nil
         }
+        return onDevice + subscription + api
+    }
+
+    var id: AIModelSelection { selection }
+    var menuTitle: String { "\(title) · \(sourceTitle)" }
+
+    func matches(_ other: AIModelSelection) -> Bool {
+        selection.source == other.source && selection.model == other.model
     }
 }

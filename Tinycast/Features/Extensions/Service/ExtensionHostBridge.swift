@@ -534,50 +534,29 @@ final class ExtensionHostBridge: ExtensionHostAPI {
         }
 
         let subscription = ctx.chatGPTSubscription ?? ChatGPTSubscriptionManager()
-        let provider = try AIProviderFactory.make(settings: aiSettings, subscription: subscription)
+        let provider = try await MainActor.run {
+            try AIProviderFactory.make(settings: aiSettings, subscription: subscription)
+        }
 
         let registry = AIToolRegistry.shared
         let availableTools = registry.availableTools
+        let loopProvider = AIToolLoopProvider(base: provider, tools: availableTools) { call in
+            await registry.execute(call: call)
+        }
 
-        var messages = [AIMessage(role: .user, text: prompt)]
-        let maxTurns = 5
-        var turn = 0
+        let request = AIRequest(
+            instructions: "You are a helpful AI assistant executing a task for a desktop extension. Use tools when needed to provide accurate, up-to-date answers.",
+            messages: [AIMessage(role: .user, text: prompt)]
+        )
 
-        while turn < maxTurns {
-            turn += 1
-            let request = AIRequest(
-                instructions: "You are a helpful AI assistant executing a task for a desktop extension. Use tools when needed to provide accurate, up-to-date answers.",
-                messages: messages,
-                tools: availableTools
-            )
-
-            var assistantText = ""
-            var toolCalls: [AIToolCall] = []
-
-            for try await event in provider.stream(request) {
-                switch event {
-                case .text(let delta):
-                    assistantText += delta
-                case .toolCall(let call):
-                    toolCalls.append(call)
-                default:
-                    break
-                }
-            }
-
-            if toolCalls.isEmpty {
-                return assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-
-            messages.append(AIMessage(role: .assistant, text: assistantText, toolCalls: toolCalls))
-
-            for call in toolCalls {
-                let result = await registry.execute(call: call)
-                messages.append(AIMessage(role: .tool, text: result.output, toolCallID: call.id))
+        var assistantText = ""
+        for try await event in loopProvider.stream(request) {
+            if case .text(let delta) = event {
+                assistantText += delta
             }
         }
 
-        throw AIProviderError.responseFailed("AI tool execution exceeded maximum turns.")
+        return assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
 }
