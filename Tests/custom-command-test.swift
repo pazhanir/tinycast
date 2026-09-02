@@ -164,7 +164,7 @@ struct CustomCommandTests {
             places.allSatisfy { $0 != nil } && places[0]! < places[1]! && places[1]! < places[2]!)
 
         // A pipe would block-buffer this and deliver it all at exit; a pty must not.
-        let live = ShellCommandRunner.stream("echo first; sleep 1; echo second")
+        let live = ShellCommandRunner.stream("echo first; sleep 2; echo second")
         let began = Date()
         var firstOutputAt: TimeInterval?
         for await event in live.events {
@@ -174,7 +174,7 @@ struct CustomCommandTests {
         }
         check(
             "output arrives while the command is still running",
-            (firstOutputAt ?? .greatestFiniteMagnitude) < 0.85)
+            (firstOutputAt ?? .greatestFiniteMagnitude) < 1.2)
 
         let statused = await collect(ShellCommandRunner.stream("exit 7"))
         check(
