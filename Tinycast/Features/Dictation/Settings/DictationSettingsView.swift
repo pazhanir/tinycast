@@ -18,40 +18,34 @@ struct DictationSettingsView: View {
                 SettingsSectionHeader(.dictation)
             }
 
-            // Shortcut & Trigger Section
+            // Shortcut Section
             Section {
-                editorField("Shortcut Trigger") {
-                    Picker("Shortcut Trigger", selection: $settings.triggerMode) {
-                        ForEach(DictationTriggerMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
+                Toggle(isOn: $settings.useFunctionKey) {
+                    SettingsRowTitle(.dictation, "Use Function (Fn / 🌐) Key")
+                    Text("Use the Mac's dedicated Function (Globe) key to record audio.")
                 }
 
-                if settings.triggerMode == .customShortcut {
-                    if let entry = CommandCatalog.entry(for: .dictateText) {
-                        SettingsRow(title: "Keyboard Shortcut") {
-                            Image(systemName: "keyboard")
-                                .frame(width: Theme.Size.settingsRowIcon)
-                        } trailing: {
-                            ShortcutRecorder(action: .command(.dictateText))
-                        }
-                    }
-                } else {
-                    SettingsRow(title: "Function Key Trigger") {
-                        Image(systemName: "globe")
-                            .frame(width: Theme.Size.settingsRowIcon)
-                    } trailing: {
-                        HStack(spacing: Theme.Spacing.xs) {
-                            ForEach(0..<settings.triggerMode.requiredTaps, id: \.self) { _ in
-                                KeyCapChip(text: "fn", style: .filled, scale: .hero)
+                if settings.useFunctionKey {
+                    editorField("Function Key Mode") {
+                        Picker("Function Key Mode", selection: $settings.functionKeyBehavior) {
+                            ForEach(FunctionKeyActivationMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
                             }
                         }
+                        .labelsHidden()
                     }
                 }
 
                 if let entry = CommandCatalog.entry(for: .dictateText) {
+                    SettingsRow(title: "Keyboard Shortcut") {
+                        Image(systemName: "keyboard")
+                            .frame(width: Theme.Size.settingsRowIcon)
+                    } trailing: {
+                        ShortcutRecorder(action: .command(.dictateText))
+                            .disabled(settings.useFunctionKey)
+                            .opacity(settings.useFunctionKey ? 0.45 : 1.0)
+                    }
+
                     Toggle(isOn: visibilityBinding(entry)) {
                         SettingsRowTitle(.dictation, "Show in Launcher")
                         Text("Show 'Dictate Text' in the Tinycast search palette.")
@@ -60,20 +54,18 @@ struct DictationSettingsView: View {
             } header: {
                 Text("Shortcut")
             } footer: {
-                switch settings.triggerMode {
-                case .singleTapFn:
-                    Text("Press the Function (fn / 🌐) key once to start or stop dictation anywhere. Tip: In macOS System Settings › Keyboard, set 'Press 🌐 key to' to 'Do Nothing' if you experience conflicts.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                case .doubleTapFn:
-                    Text("Press the Function (fn / 🌐) key twice in quick succession to start or stop dictation anywhere.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                case .tripleTapFn:
-                    Text("Press the Function (fn / 🌐) key 3 times in quick succession to start or stop dictation anywhere.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                case .customShortcut:
+                if settings.useFunctionKey {
+                    switch settings.functionKeyBehavior {
+                    case .holdToTalk:
+                        Text("Hold the Function (fn / 🌐) key while speaking, release to transcribe. Tip: In macOS System Settings › Keyboard, set 'Press 🌐 key to' to 'Do Nothing' if you experience conflicts.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .pressToToggle:
+                        Text("Press the Function (fn / 🌐) key once to start recording, press again to stop. Tip: In macOS System Settings › Keyboard, set 'Press 🌐 key to' to 'Do Nothing' if you experience conflicts.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
                     Text("Press your recorded global shortcut anywhere to dictate text into the active app.")
                         .font(.caption)
                         .foregroundStyle(.secondary)

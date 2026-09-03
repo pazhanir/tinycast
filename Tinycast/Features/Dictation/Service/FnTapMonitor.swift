@@ -23,7 +23,10 @@ private func fnTapEventTapCallback(
 
 @MainActor
 final class FnTapMonitor: HealthCheckable {
-    var onTapTriggered: (() -> Void)?
+    var onHoldBegan: (() -> Void)?
+    var onHoldEnded: (() -> Void)?
+    var onHoldCancelled: (() -> Void)?
+    var onToggle: (() -> Void)?
 
     var isPaused = false {
         didSet {
@@ -33,7 +36,7 @@ final class FnTapMonitor: HealthCheckable {
     }
 
     private var isEnabled = false
-    private var detector = FnTapDetector(targetTaps: 2)
+    private var detector = FnTapDetector(mode: .holdToTalk)
     private var tapPort: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var sessionTokens: [NotificationToken] = []
@@ -45,9 +48,9 @@ final class FnTapMonitor: HealthCheckable {
         tearDownTap()
     }
 
-    func update(enabled: Bool, targetTaps: Int) {
+    func update(enabled: Bool, mode: FunctionKeyActivationMode) {
         self.isEnabled = enabled
-        self.detector.setTargetTaps(targetTaps)
+        self.detector.setMode(mode == .holdToTalk ? .holdToTalk : .pressToToggle)
         installObserversIfNeeded()
         syncTapPresence()
     }
@@ -69,8 +72,17 @@ final class FnTapMonitor: HealthCheckable {
             input = .otherInput
         }
 
-        if detector.handle(input, at: now) {
-            onTapTriggered?()
+        switch detector.handle(input, at: now) {
+        case .none:
+            break
+        case .holdBegan:
+            onHoldBegan?()
+        case .holdEnded:
+            onHoldEnded?()
+        case .holdCancelled:
+            onHoldCancelled?()
+        case .toggleTriggered:
+            onToggle?()
         }
     }
 

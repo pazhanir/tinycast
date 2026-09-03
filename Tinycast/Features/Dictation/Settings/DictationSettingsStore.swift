@@ -17,9 +17,16 @@ final class DictationSettingsStore {
         }
     }
 
-    var triggerMode: DictationTriggerMode {
+    var useFunctionKey: Bool {
         didSet {
-            defaults.set(triggerMode.rawValue, forKey: Keys.triggerMode)
+            defaults.set(useFunctionKey, forKey: Keys.useFunctionKey)
+            onTriggerModeChanged?()
+        }
+    }
+
+    var functionKeyBehavior: FunctionKeyActivationMode {
+        didSet {
+            defaults.set(functionKeyBehavior.rawValue, forKey: Keys.functionKeyBehavior)
             onTriggerModeChanged?()
         }
     }
@@ -70,8 +77,9 @@ final class DictationSettingsStore {
         self.keyStore = keyStore
 
         self.isEnabled = defaults.object(forKey: Keys.isEnabled) as? Bool ?? true
-        let savedTrigger = defaults.string(forKey: Keys.triggerMode).flatMap(DictationTriggerMode.init) ?? .doubleTapFn
-        self.triggerMode = savedTrigger
+        self.useFunctionKey = defaults.object(forKey: Keys.useFunctionKey) as? Bool ?? true
+        let savedBehavior = defaults.string(forKey: Keys.functionKeyBehavior).flatMap(FunctionKeyActivationMode.init) ?? .holdToTalk
+        self.functionKeyBehavior = savedBehavior
         let savedProvider = defaults.string(forKey: Keys.provider).flatMap(DictationProvider.init) ?? .groq
         self.provider = savedProvider
         self.groqBaseURL = defaults.string(forKey: Keys.groqBaseURL) ?? "https://api.groq.com/openai/v1"
@@ -90,7 +98,8 @@ final class DictationSettingsStore {
 
     private enum Keys {
         static let isEnabled = "dictation.isEnabled"
-        static let triggerMode = "dictation.triggerMode"
+        static let useFunctionKey = "dictation.useFunctionKey"
+        static let functionKeyBehavior = "dictation.functionKeyBehavior"
         static let provider = "dictation.provider"
         static let groqBaseURL = "dictation.groqBaseURL"
         static let groqModel = "dictation.groqModel"

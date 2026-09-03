@@ -34,7 +34,19 @@ final class DictationCoordinator {
             self?.cancelDictation()
         }
 
-        self.fnTapMonitor.onTapTriggered = { [weak self] in
+        self.fnTapMonitor.onHoldBegan = { [weak self] in
+            self?.startDictation()
+        }
+
+        self.fnTapMonitor.onHoldEnded = { [weak self] in
+            self?.stopAndTranscribe()
+        }
+
+        self.fnTapMonitor.onHoldCancelled = { [weak self] in
+            self?.cancelDictation()
+        }
+
+        self.fnTapMonitor.onToggle = { [weak self] in
             self?.toggleDictation()
         }
 
@@ -45,9 +57,8 @@ final class DictationCoordinator {
     }
 
     func syncTriggerPresence() {
-        let isFn = settings.isEnabled && settings.triggerMode.isFnTrigger
-        let taps = settings.triggerMode.requiredTaps
-        fnTapMonitor.update(enabled: isFn, targetTaps: taps)
+        let isFnActive = settings.isEnabled && settings.useFunctionKey
+        fnTapMonitor.update(enabled: isFnActive, mode: settings.functionKeyBehavior)
     }
 
     func toggleDictation() {

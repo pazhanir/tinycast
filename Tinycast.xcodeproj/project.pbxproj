@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		D1C7A0010000000000000002 /* DictationTriggerMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C7A0010000000000000001 /* DictationTriggerMode.swift */; };
+		D1C7A0010000000000000002 /* FunctionKeyActivationMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C7A0010000000000000001 /* FunctionKeyActivationMode.swift */; };
 		D1C7A0020000000000000002 /* FnTapDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C7A0020000000000000001 /* FnTapDetector.swift */; };
 		D1C7A0030000000000000002 /* FnTapMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C7A0030000000000000001 /* FnTapMonitor.swift */; };
 		0047FE6A50E746CCF0FC6810 /* SystemActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AEDBB526AB2C0406D8226D5 /* SystemActionRunner.swift */; };
@@ -484,7 +484,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		D1C7A0010000000000000001 /* DictationTriggerMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationTriggerMode.swift; sourceTree = "<group>"; };
+		D1C7A0010000000000000001 /* FunctionKeyActivationMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunctionKeyActivationMode.swift; sourceTree = "<group>"; };
 		D1C7A0020000000000000001 /* FnTapDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FnTapDetector.swift; sourceTree = "<group>"; };
 		D1C7A0030000000000000001 /* FnTapMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FnTapMonitor.swift; sourceTree = "<group>"; };
 		00B475B5929CC0478EFAC7D8 /* UpdateFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateFailure.swift; sourceTree = "<group>"; };
@@ -1428,7 +1428,7 @@
 		58F07CD16A5D35BECC10A00A /* Model */ = {
 			isa = PBXGroup;
 			children = (
-				D1C7A0010000000000000001 /* DictationTriggerMode.swift */,
+				D1C7A0010000000000000001 /* FunctionKeyActivationMode.swift */,
 				D1C7A0020000000000000001 /* FnTapDetector.swift */,
 				05AB63FB0A66BAE522706C83 /* DictationProvider.swift */,
 				2BC4F5CB963EB09B0D7C3384 /* DictationStyle.swift */,
@@ -2660,7 +2660,7 @@
 				9E95E88317B72C64A249909C /* DictationSettingsStore.swift in Sources */,
 				4963DF703487FA79850C2DF3 /* DictationSettingsView.swift in Sources */,
 				FFF1F578B5BD10C867C2E6E3 /* DictationStyle.swift in Sources */,
-				D1C7A0010000000000000002 /* DictationTriggerMode.swift in Sources */,
+				D1C7A0010000000000000002 /* FunctionKeyActivationMode.swift in Sources */,
 				D1C7A0020000000000000002 /* FnTapDetector.swift in Sources */,
 				D1C7A0030000000000000002 /* FnTapMonitor.swift in Sources */,
 				D29B4BC986D7950E611BD720 /* DictationTranscriptionEngine.swift in Sources */,

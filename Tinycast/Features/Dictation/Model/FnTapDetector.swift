@@ -1,83 +1,103 @@
 import Foundation
 
-/// Pure recognizer for single, double, or triple taps of the Mac Function (fn / Globe) key.
+/// Pure recognizer for Function (fn / Globe) key interactions: hold-to-talk and press-to-toggle.
 struct FnTapDetector: Sendable {
-    /// Longest a press may last to be considered a quick tap (400ms).
-    static let maxHold: TimeInterval = 0.40
-    /// Longest gap between successive taps (450ms).
-    static let maxGap: TimeInterval = 0.45
+    /// Longest a press may last to be considered a quick tap in toggle mode (400ms).
+    static let maxTapDuration: TimeInterval = 0.40
+
+    enum Mode: Sendable {
+        case holdToTalk
+        case pressToToggle
+    }
 
     enum Input: Sendable {
         case fnFlag(isHeld: Bool, hasOtherModifiers: Bool)
         case otherInput
     }
 
-    private var targetTaps: Int
-    private var isFnHeld = false
-    private var pressStartTime: TimeInterval?
-    private var lastReleaseTime: TimeInterval?
-    private var tapCount: Int = 0
-
-    init(targetTaps: Int = 2) {
-        self.targetTaps = targetTaps
+    enum Output: Equatable, Sendable {
+        case none
+        case holdBegan
+        case holdEnded
+        case holdCancelled
+        case toggleTriggered
     }
 
-    mutating func setTargetTaps(_ taps: Int) {
-        self.targetTaps = taps
+    private var mode: Mode
+    private var isFnHeld = false
+    private var isCurrentlyHolding = false
+    private var pressStartTime: TimeInterval?
+
+    init(mode: Mode = .holdToTalk) {
+        self.mode = mode
+    }
+
+    mutating func setMode(_ mode: Mode) {
+        self.mode = mode
         reset()
     }
 
     mutating func reset() {
         isFnHeld = false
+        isCurrentlyHolding = false
         pressStartTime = nil
-        lastReleaseTime = nil
-        tapCount = 0
     }
 
-    /// Handles a flag or input transition. Returns true when target tap count has been reached.
-    mutating func handle(_ input: Input, at now: TimeInterval) -> Bool {
+    /// Handles a flag change or other keyboard/mouse input at a monotonic timestamp.
+    mutating func handle(_ input: Input, at now: TimeInterval) -> Output {
         switch input {
         case .otherInput:
+            if isCurrentlyHolding {
+                reset()
+                return .holdCancelled
+            }
             reset()
-            return false
+            return .none
 
         case .fnFlag(let isHeld, let hasOtherModifiers):
             if hasOtherModifiers {
+                if isCurrentlyHolding {
+                    reset()
+                    return .holdCancelled
+                }
                 reset()
-                return false
+                return .none
             }
 
-            guard isHeld != isFnHeld else { return false }
+            guard isHeld != isFnHeld else { return .none }
             isFnHeld = isHeld
 
-            if isHeld {
-                // Fn key pressed down
-                if let lastRelease = lastReleaseTime, now - lastRelease > Self.maxGap {
-                    tapCount = 0
-                }
-                pressStartTime = now
-                return false
-            } else {
-                // Fn key released
-                guard let start = pressStartTime else {
+            switch mode {
+            case .holdToTalk:
+                if isHeld {
+                    isCurrentlyHolding = true
+                    pressStartTime = now
+                    return .holdBegan
+                } else {
+                    guard isCurrentlyHolding else {
+                        reset()
+                        return .none
+                    }
                     reset()
-                    return false
-                }
-                pressStartTime = nil
-                let duration = now - start
-                guard duration <= Self.maxHold else {
-                    tapCount = 0
-                    return false
+                    return .holdEnded
                 }
 
-                tapCount += 1
-                lastReleaseTime = now
-
-                if tapCount >= targetTaps {
-                    reset()
-                    return true
+            case .pressToToggle:
+                if isHeld {
+                    pressStartTime = now
+                    return .none
+                } else {
+                    guard let start = pressStartTime else {
+                        reset()
+                        return .none
+                    }
+                    pressStartTime = nil
+                    let duration = now - start
+                    if duration <= Self.maxTapDuration {
+                        return .toggleTriggered
+                    }
+                    return .none
                 }
-                return false
             }
         }
     }
