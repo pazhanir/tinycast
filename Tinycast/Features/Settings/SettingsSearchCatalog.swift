@@ -278,8 +278,9 @@ enum SettingsSearchCatalog {
     private static let dictation: [SettingsSearchEntry] = [
         .init(pane: .dictation, keywords: ["whisper", "speech", "voice", "transcribe", "groq", "audio", "mic", "microphone"]),
         .init(.dictation, "Enable Dictation", keywords: ["speech", "voice", "transcribe"]),
-        .init(.dictation, "Transcription Engine", keywords: ["groq", "whisper", "apple", "speech", "on-device"]),
-        .init(.dictation, "Groq API Key", keywords: ["api", "token", "secret", "groq"]),
+        .init(.dictation, "Use Function (Fn / 🌐) Key", keywords: ["shortcut", "fn", "globe", "keyboard"]),
+        .init(.dictation, "Show in Launcher", keywords: ["palette", "command"]),
+        .init(group: .dictation, "Provider", keywords: ["groq", "whisper", "apple", "speech", "on-device", "api key", "model"]),
         .init(.dictation, "Transcription Style", keywords: ["email", "messaging", "raw", "formatting"]),
         .init(.dictation, "Use App Context", keywords: ["active window", "privacy", "frontmost"]),
         .init(.dictation, "Custom Vocabulary", keywords: ["words", "jargon", "dictionary"]),
