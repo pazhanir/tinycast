@@ -4,12 +4,11 @@ import AppKit
 @MainActor
 final class DictationAudioRecorder: NSObject {
     private var audioEngine: AVAudioEngine?
-    private var audioConverter: AVAudioConverter?
-    private var pcmData = Data()
+    private var activeSession: AudioCaptureSession?
     private(set) var isRecording = false
 
     /// Normalized audio level from 0.0 to 1.0 for UI waveform rendering
-    var onAudioLevel: ((Float) -> Void)?
+    var onAudioLevel: (@MainActor (Float) -> Void)?
 
     private let targetFormat = AVAudioFormat(
         commonFormat: .pcmFormatInt16,
@@ -46,14 +45,24 @@ final class DictationAudioRecorder: NSObject {
             throw NSError(domain: "DictationAudioRecorder", code: 2, userInfo: [NSLocalizedDescriptionKey: "Cannot initialize audio converter."])
         }
 
+        let levelCallback: @Sendable (Float) -> Void = { [weak self] level in
+            Task { @MainActor [weak self] in
+                self?.onAudioLevel?(level)
+            }
+        }
+
+        let session = AudioCaptureSession(
+            converter: converter,
+            targetFormat: targetFormat,
+            onAudioLevel: levelCallback
+        )
+
         self.audioEngine = engine
-        self.audioConverter = converter
-        self.pcmData = Data()
-        self.pcmData.reserveCapacity(16000 * 2 * 30) // ~30 seconds buffer reservation
+        self.activeSession = session
         self.isRecording = true
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, time in
-            self?.processInputBuffer(buffer)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { buffer, _ in
+            session.processBuffer(buffer)
         }
 
         engine.prepare()
@@ -67,27 +76,53 @@ final class DictationAudioRecorder: NSObject {
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         audioEngine = nil
-        audioConverter = nil
 
-        let recordedPCM = pcmData
-        pcmData = Data()
+        let recordedPCM = activeSession?.finish() ?? Data()
+        activeSession = nil
         return recordedPCM
     }
 
     func cancelRecording() {
         guard isRecording else { return }
         isRecording = false
+
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         audioEngine = nil
-        audioConverter = nil
-        pcmData = Data()
+
+        activeSession?.cancel()
+        activeSession = nil
+    }
+}
+
+// MARK: - Thread-Safe Audio Capture Session
+
+private final class AudioCaptureSession: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pcmData = Data()
+    private let converter: AVAudioConverter
+    private let targetFormat: AVAudioFormat
+    private let onAudioLevel: (@Sendable (Float) -> Void)?
+    private var isActive = true
+
+    init(
+        converter: AVAudioConverter,
+        targetFormat: AVAudioFormat,
+        onAudioLevel: (@Sendable (Float) -> Void)?
+    ) {
+        self.converter = converter
+        self.targetFormat = targetFormat
+        self.onAudioLevel = onAudioLevel
+        self.pcmData.reserveCapacity(16000 * 2 * 30) // ~30 seconds buffer reservation
     }
 
-    // MARK: - Buffer Processing
-
-    private func processInputBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard isRecording, let converter = audioConverter else { return }
+    func processBuffer(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        guard isActive else {
+            lock.unlock()
+            return
+        }
+        lock.unlock()
 
         // 1. Calculate RMS audio power for waveform UI
         if let channelData = buffer.floatChannelData {
@@ -101,10 +136,7 @@ final class DictationAudioRecorder: NSObject {
             let rms = sqrt(sum / Float(max(1, frameLength)))
             // Normalize roughly between 0.0 and 1.0 (typical speaking speech RMS is 0.02 - 0.3)
             let normalized = min(1.0, max(0.0, rms * 4.5))
-
-            Task { @MainActor in
-                self.onAudioLevel?(normalized)
-            }
+            onAudioLevel?(normalized)
         }
 
         // 2. Convert to 16kHz Int16 PCM
@@ -118,7 +150,7 @@ final class DictationAudioRecorder: NSObject {
 
         var error: NSError?
         var isEndOfStream = false
-        let status = converter.convert(to: outputBuffer, error: &error) { inNumPackets, outStatus in
+        let status = converter.convert(to: outputBuffer, error: &error) { _, outStatus in
             if isEndOfStream {
                 outStatus.pointee = .noDataNow
                 return nil
@@ -132,10 +164,27 @@ final class DictationAudioRecorder: NSObject {
             let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
             let dataChunk = Data(bytes: int16Data[0], count: byteCount)
 
-            Task { @MainActor in
-                guard self.isRecording else { return }
-                self.pcmData.append(dataChunk)
+            lock.lock()
+            if isActive {
+                pcmData.append(dataChunk)
             }
+            lock.unlock()
         }
+    }
+
+    func finish() -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        isActive = false
+        let result = pcmData
+        pcmData = Data()
+        return result
+    }
+
+    func cancel() {
+        lock.lock()
+        defer { lock.unlock() }
+        isActive = false
+        pcmData = Data()
     }
 }
