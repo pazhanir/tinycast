@@ -138,19 +138,19 @@ struct AISettingsView: View {
                 SettingsRowTitle(.aiChat, "Web search")
                 Text("Sends prompts on to a search engine when the route offers one — ChatGPT and OpenRouter. Otherwise, seamlessly activates local web search.")
             }
-            Toggle(isOn: .calculatorToolEnabled) {
+            Toggle(isOn: $settings.calculatorToolEnabled) {
                 SettingsRowTitle(.aiChat, "Calculator")
                 Text("Evaluates mathematical expressions and conversions.")
             }
-            Toggle(isOn: .weatherToolEnabled) {
+            Toggle(isOn: $settings.weatherToolEnabled) {
                 SettingsRowTitle(.aiChat, "Weather")
                 Text("Looks up live weather and forecasts.")
             }
-            Toggle(isOn: .locationToolEnabled) {
+            Toggle(isOn: $settings.locationToolEnabled) {
                 SettingsRowTitle(.aiChat, "Location")
                 Text("Provides current location context for location-based requests.")
             }
-            Toggle(isOn: .extensionToolsEnabled) {
+            Toggle(isOn: $settings.extensionToolsEnabled) {
                 SettingsRowTitle(.aiChat, "Extension AI commands")
                 Text("Allows AI to run commands from installed Raycast extensions.")
             }
