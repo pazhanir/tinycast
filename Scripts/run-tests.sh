@@ -141,6 +141,8 @@ run palette-tab-test       Tinycast/Palette/PaletteMode.swift \
 run dictation-test         Tinycast/Features/Dictation/Model/WAVAudioSerializer.swift \
                            Tinycast/Features/Dictation/Model/DictationStyle.swift \
                            Tinycast/Features/Dictation/Model/DictationProvider.swift \
+                           Tinycast/Features/Dictation/Model/DictationTriggerMode.swift \
+                           Tinycast/Features/Dictation/Model/FnTapDetector.swift \
                            Tinycast/Features/Dictation/Service/DictationContextExtractor.swift
 run fallback-test          Tinycast/Features/Launcher/Model/Fallback.swift \
                            Tinycast/Features/Launcher/Model/CommandID.swift \

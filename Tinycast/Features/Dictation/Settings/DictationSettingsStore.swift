@@ -8,8 +8,20 @@ final class DictationSettingsStore {
 
     private static let groqAccountKey = "groq-api-key"
 
+    @ObservationIgnored var onTriggerModeChanged: (() -> Void)?
+
     var isEnabled: Bool {
-        didSet { defaults.set(isEnabled, forKey: Keys.isEnabled) }
+        didSet {
+            defaults.set(isEnabled, forKey: Keys.isEnabled)
+            onTriggerModeChanged?()
+        }
+    }
+
+    var triggerMode: DictationTriggerMode {
+        didSet {
+            defaults.set(triggerMode.rawValue, forKey: Keys.triggerMode)
+            onTriggerModeChanged?()
+        }
     }
 
     var provider: DictationProvider {
@@ -58,6 +70,8 @@ final class DictationSettingsStore {
         self.keyStore = keyStore
 
         self.isEnabled = defaults.object(forKey: Keys.isEnabled) as? Bool ?? true
+        let savedTrigger = defaults.string(forKey: Keys.triggerMode).flatMap(DictationTriggerMode.init) ?? .doubleTapFn
+        self.triggerMode = savedTrigger
         let savedProvider = defaults.string(forKey: Keys.provider).flatMap(DictationProvider.init) ?? .groq
         self.provider = savedProvider
         self.groqBaseURL = defaults.string(forKey: Keys.groqBaseURL) ?? "https://api.groq.com/openai/v1"
@@ -76,6 +90,7 @@ final class DictationSettingsStore {
 
     private enum Keys {
         static let isEnabled = "dictation.isEnabled"
+        static let triggerMode = "dictation.triggerMode"
         static let provider = "dictation.provider"
         static let groqBaseURL = "dictation.groqBaseURL"
         static let groqModel = "dictation.groqModel"

@@ -23,6 +23,7 @@ struct DictationTests {
         testStyles()
         testProviders()
         testPromptSynthesis()
+        testFnTapDetector()
         print("\(passes) passed, \(failures) failed")
         if failures > 0 { exit(1) }
     }
@@ -96,5 +97,54 @@ struct DictationTests {
         check("Synthesized prompt contains custom author name", prompt.contains("Pazhani"), "got \(prompt)")
         check("Synthesized prompt contains default style guidance", prompt.contains("clean, natural written text"), "got \(prompt)")
         check("Synthesized prompt contains window context", prompt.contains("App: Xcode"), "got \(prompt)")
+    }
+
+    // MARK: - Fn Tap Detector
+
+    static func testFnTapDetector() {
+        // 1. Single Tap Mode
+        var singleDetector = FnTapDetector(targetTaps: 1)
+        let r1 = singleDetector.handle(.fnFlag(isHeld: true, hasOtherModifiers: false), at: 1.0)
+        check("Single tap: press alone does not trigger", r1 == false)
+        let r2 = singleDetector.handle(.fnFlag(isHeld: false, hasOtherModifiers: false), at: 1.15)
+        check("Single tap: release triggers dictation", r2 == true)
+
+        // 2. Double Tap Mode
+        var doubleDetector = FnTapDetector(targetTaps: 2)
+        _ = doubleDetector.handle(.fnFlag(isHeld: true, hasOtherModifiers: false), at: 2.0)
+        let d1 = doubleDetector.handle(.fnFlag(isHeld: false, hasOtherModifiers: false), at: 2.1)
+        check("Double tap: first tap does not trigger", d1 == false)
+        _ = doubleDetector.handle(.fnFlag(isHeld: true, hasOtherModifiers: false), at: 2.3)
+        let d2 = doubleDetector.handle(.fnFlag(isHeld: false, hasOtherModifiers: false), at: 2.4)
+        check("Double tap: second tap triggers dictation", d2 == true)
+
+        // 3. Triple Tap Mode
+        var tripleDetector = FnTapDetector(targetTaps: 3)
+        _ = tripleDetector.handle(.fnFlag(isHeld: true, hasOtherModifiers: false), at: 3.0)
+        _ = tripleDetector.handle(.fnFlag(isHeld: false, hasOtherModifiers: false), at: 3.1)
+        _ = tripleDetector.handle(.fnFlag(isHeld: true, hasOtherModifiers: false), at: 3.25)
+        _ = tripleDetector.handle(.fnFlag(isHeld: false, hasOtherModifiers: false), at: 3.35)
+        _ = tripleDetector.handle(.fnFlag(isHeld: true, hasOtherModifiers: false), at: 3.5)
+        let t3 = tripleDetector.handle(.fnFlag(isHeld: false, hasOtherModifiers: false), at: 3.6)
+        check("Triple tap: third tap triggers dictation", t3 == true)
+
+        // 4. Invalidation on other key input
+        var cancelDetector = FnTapDetector(targetTaps: 2)
+        _ = cancelDetector.handle(.fnFlag(isHeld: true, hasOtherModifiers: false), at: 4.0)
+        _ = cancelDetector.handle(.otherInput, at: 4.05)
+        let c1 = cancelDetector.handle(.fnFlag(isHeld: false, hasOtherModifiers: false), at: 4.1)
+        check("Other key input cancels tap sequence", c1 == false)
+
+        // 5. Invalidation when other modifiers held (e.g. Cmd+Fn)
+        var modDetector = FnTapDetector(targetTaps: 1)
+        let m1 = modDetector.handle(.fnFlag(isHeld: true, hasOtherModifiers: true), at: 5.0)
+        let m2 = modDetector.handle(.fnFlag(isHeld: false, hasOtherModifiers: true), at: 5.1)
+        check("Fn with other modifiers does not trigger", m1 == false && m2 == false)
+
+        // 6. Held too long (hold > 0.4s is not a tap)
+        var holdDetector = FnTapDetector(targetTaps: 1)
+        _ = holdDetector.handle(.fnFlag(isHeld: true, hasOtherModifiers: false), at: 6.0)
+        let h1 = holdDetector.handle(.fnFlag(isHeld: false, hasOtherModifiers: false), at: 6.5)
+        check("Fn held longer than maxHold does not trigger", h1 == false)
     }
 }

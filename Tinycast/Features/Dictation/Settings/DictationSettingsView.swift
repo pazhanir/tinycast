@@ -18,26 +18,66 @@ struct DictationSettingsView: View {
                 SettingsSectionHeader(.dictation)
             }
 
-            // Dictate Text Command & Global Hotkey
+            // Shortcut & Trigger Section
             Section {
-                if let entry = CommandCatalog.entry(for: .dictateText) {
-                    SettingsRow(title: entry.name) {
-                        Image(systemName: CommandID.dictateText.sfSymbol)
+                editorField("Shortcut Trigger") {
+                    Picker("Shortcut Trigger", selection: $settings.triggerMode) {
+                        ForEach(DictationTriggerMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                }
+
+                if settings.triggerMode == .customShortcut {
+                    if let entry = CommandCatalog.entry(for: .dictateText) {
+                        SettingsRow(title: "Keyboard Shortcut") {
+                            Image(systemName: "keyboard")
+                                .frame(width: Theme.Size.settingsRowIcon)
+                        } trailing: {
+                            ShortcutRecorder(action: .command(.dictateText))
+                        }
+                    }
+                } else {
+                    SettingsRow(title: "Function Key Trigger") {
+                        Image(systemName: "globe")
                             .frame(width: Theme.Size.settingsRowIcon)
                     } trailing: {
-                        ShortcutRecorder(action: .command(.dictateText))
-                        Toggle("", isOn: visibilityBinding(entry))
-                            .labelsHidden()
-                            .toggleStyle(.checkbox)
-                            .accessibilityLabel("Show \(entry.name) in launcher")
+                        HStack(spacing: Theme.Spacing.xs) {
+                            ForEach(0..<settings.triggerMode.requiredTaps, id: \.self) { _ in
+                                KeyCapChip(text: "fn", style: .filled, scale: .hero)
+                            }
+                        }
+                    }
+                }
+
+                if let entry = CommandCatalog.entry(for: .dictateText) {
+                    Toggle(isOn: visibilityBinding(entry)) {
+                        SettingsRowTitle(.dictation, "Show in Launcher")
+                        Text("Show 'Dictate Text' in the Tinycast search palette.")
                     }
                 }
             } header: {
-                Text("Command & Shortcut")
+                Text("Shortcut")
             } footer: {
-                Text("Press your global hotkey anywhere to dictate text into the active app.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                switch settings.triggerMode {
+                case .singleTapFn:
+                    Text("Press the Function (fn / 🌐) key once to start or stop dictation anywhere. Tip: In macOS System Settings › Keyboard, set 'Press 🌐 key to' to 'Do Nothing' if you experience conflicts.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .doubleTapFn:
+                    Text("Press the Function (fn / 🌐) key twice in quick succession to start or stop dictation anywhere.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .tripleTapFn:
+                    Text("Press the Function (fn / 🌐) key 3 times in quick succession to start or stop dictation anywhere.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .customShortcut:
+                    Text("Press your recorded global shortcut anywhere to dictate text into the active app.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .settingsEnabled(settings.isEnabled)
 

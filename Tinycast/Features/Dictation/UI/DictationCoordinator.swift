@@ -7,6 +7,7 @@ final class DictationCoordinator {
     private let appSettings: AppSettings
     private let hud: DictationHUDController
     private let recorder: DictationAudioRecorder
+    let fnTapMonitor = FnTapMonitor()
 
     private var targetApp: NSRunningApplication?
     private var cachedAppContext: String?
@@ -32,6 +33,21 @@ final class DictationCoordinator {
         self.hud.onCancelRequested = { [weak self] in
             self?.cancelDictation()
         }
+
+        self.fnTapMonitor.onTapTriggered = { [weak self] in
+            self?.toggleDictation()
+        }
+
+        self.settings.onTriggerModeChanged = { [weak self] in
+            self?.syncTriggerPresence()
+        }
+        syncTriggerPresence()
+    }
+
+    func syncTriggerPresence() {
+        let isFn = settings.isEnabled && settings.triggerMode.isFnTrigger
+        let taps = settings.triggerMode.requiredTaps
+        fnTapMonitor.update(enabled: isFn, targetTaps: taps)
     }
 
     func toggleDictation() {

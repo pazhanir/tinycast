@@ -233,6 +233,8 @@ final class AppCore {
             hyperKeyTap.healthTicker = healthTicker
             hotKeys.doubleTapMonitor.healthTicker = healthTicker
             snippetListener.healthTicker = healthTicker
+            dictationCoordinator.fnTapMonitor.healthTicker = healthTicker
+            dictationCoordinator.syncTriggerPresence()
 
             hotKeys.onTogglePalette = { [weak self] in self?.paletteCoordinator.togglePalette() }
             hotKeys.onRunCommand = { [weak self] id in self?.launcherCoordinator.runCommand(id) }

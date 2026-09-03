@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D1C7A0010000000000000002 /* DictationTriggerMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C7A0010000000000000001 /* DictationTriggerMode.swift */; };
+		D1C7A0020000000000000002 /* FnTapDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C7A0020000000000000001 /* FnTapDetector.swift */; };
+		D1C7A0030000000000000002 /* FnTapMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C7A0030000000000000001 /* FnTapMonitor.swift */; };
 		0047FE6A50E746CCF0FC6810 /* SystemActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AEDBB526AB2C0406D8226D5 /* SystemActionRunner.swift */; };
 		005B39EF22378D1736CE5805 /* TerminalLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2EAA357A9F0317320CFAADF /* TerminalLogView.swift */; };
 		00BA80B95E15859F0FDA6F16 /* AppVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D4F22647E4E1BA19F0FC520 /* AppVersion.swift */; };
@@ -481,6 +484,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		D1C7A0010000000000000001 /* DictationTriggerMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationTriggerMode.swift; sourceTree = "<group>"; };
+		D1C7A0020000000000000001 /* FnTapDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FnTapDetector.swift; sourceTree = "<group>"; };
+		D1C7A0030000000000000001 /* FnTapMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FnTapMonitor.swift; sourceTree = "<group>"; };
 		00B475B5929CC0478EFAC7D8 /* UpdateFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateFailure.swift; sourceTree = "<group>"; };
 		00ECBD55353C83A7F4E93592 /* MCPSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsSection.swift; sourceTree = "<group>"; };
 		0266BAF4643A4B5C41B600DE /* ExtensionColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionColors.swift; sourceTree = "<group>"; };
@@ -1240,6 +1246,7 @@
 		2F37DF33894D0E30B694B323 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				D1C7A0030000000000000001 /* FnTapMonitor.swift */,
 				7E83686672C80C75742BCC8E /* AppleSpeechTranscriber.swift */,
 				10183C54F1D80F36F55F119F /* DictationAudioRecorder.swift */,
 				EE7CF5617CFF37137CB3264C /* DictationContextExtractor.swift */,
@@ -1421,6 +1428,8 @@
 		58F07CD16A5D35BECC10A00A /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				D1C7A0010000000000000001 /* DictationTriggerMode.swift */,
+				D1C7A0020000000000000001 /* FnTapDetector.swift */,
 				05AB63FB0A66BAE522706C83 /* DictationProvider.swift */,
 				2BC4F5CB963EB09B0D7C3384 /* DictationStyle.swift */,
 				DC97461117306CFFE5E86A72 /* WAVAudioSerializer.swift */,
@@ -2651,6 +2660,9 @@
 				9E95E88317B72C64A249909C /* DictationSettingsStore.swift in Sources */,
 				4963DF703487FA79850C2DF3 /* DictationSettingsView.swift in Sources */,
 				FFF1F578B5BD10C867C2E6E3 /* DictationStyle.swift in Sources */,
+				D1C7A0010000000000000002 /* DictationTriggerMode.swift in Sources */,
+				D1C7A0020000000000000002 /* FnTapDetector.swift in Sources */,
+				D1C7A0030000000000000002 /* FnTapMonitor.swift in Sources */,
 				D29B4BC986D7950E611BD720 /* DictationTranscriptionEngine.swift in Sources */,
 				A1F267E9D9914DB60DEEE0AD /* DoubleTapDetector.swift in Sources */,
 				DFB25A4CDD35071B745F2EF9 /* DoubleTapModifier.swift in Sources */,
