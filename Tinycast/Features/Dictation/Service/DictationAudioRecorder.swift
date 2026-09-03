@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import AppKit
 
 @MainActor
@@ -61,9 +61,7 @@ final class DictationAudioRecorder: NSObject {
         self.activeSession = session
         self.isRecording = true
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { buffer, _ in
-            session.processBuffer(buffer)
-        }
+        session.attachTap(to: inputNode, format: inputFormat)
 
         engine.prepare()
         try engine.start()
@@ -98,6 +96,10 @@ final class DictationAudioRecorder: NSObject {
 // MARK: - Thread-Safe Audio Capture Session
 
 private final class AudioCaptureSession: @unchecked Sendable {
+    private final class StreamState: @unchecked Sendable {
+        var isEnd = false
+    }
+
     private let lock = NSLock()
     private var pcmData = Data()
     private let converter: AVAudioConverter
@@ -114,6 +116,12 @@ private final class AudioCaptureSession: @unchecked Sendable {
         self.targetFormat = targetFormat
         self.onAudioLevel = onAudioLevel
         self.pcmData.reserveCapacity(16000 * 2 * 30) // ~30 seconds buffer reservation
+    }
+
+    func attachTap(to inputNode: AVAudioInputNode, format: AVAudioFormat) {
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            self?.processBuffer(buffer)
+        }
     }
 
     func processBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -149,14 +157,14 @@ private final class AudioCaptureSession: @unchecked Sendable {
         }
 
         var error: NSError?
-        var isEndOfStream = false
+        let streamState = StreamState()
         let status = converter.convert(to: outputBuffer, error: &error) { _, outStatus in
-            if isEndOfStream {
+            if streamState.isEnd {
                 outStatus.pointee = .noDataNow
                 return nil
             }
             outStatus.pointee = .haveData
-            isEndOfStream = true
+            streamState.isEnd = true
             return buffer
         }
 
