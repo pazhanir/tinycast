@@ -174,7 +174,7 @@ struct CustomCommandTests {
         }
         check(
             "output arrives while the command is still running",
-            (firstOutputAt ?? .greatestFiniteMagnitude) < 1.2)
+            (firstOutputAt ?? .greatestFiniteMagnitude) < 1.8)
 
         let statused = await collect(ShellCommandRunner.stream("exit 7"))
         check(

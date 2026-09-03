@@ -49,6 +49,7 @@ final class AppCore {
     let aiChat: AIChatState
     let aiSettings = AISettingsStore(
         isAppleIntelligenceAvailable: { AppleIntelligenceProvider.status().isAvailable })
+    let dictationSettings = DictationSettingsStore()
     let mcpSettings = MCPSettingsStore()
     let mcp = MCPServerManager()
     let quickActionSettings = QuickActionSettingsStore()
@@ -147,6 +148,8 @@ final class AppCore {
         chat: aiChat, settings: settings, appIndex: appIndex, palette: palette,
         paletteCoordinator: paletteCoordinator, settingsCoordinator: settingsCoordinator,
         core: self)
+    @ObservationIgnored private(set) lazy var dictationCoordinator = DictationCoordinator(
+        settings: dictationSettings, appSettings: settings)
 
     @ObservationIgnored private lazy var windowController = PaletteWindowController(core: self)
     @ObservationIgnored private lazy var messageHUD = MessageHUDController(settings: settings)

@@ -77,6 +77,10 @@
 	<string>Tinycast uses your location to provide accurate local weather and location-aware AI responses.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Tinycast uses your location to provide accurate local weather and location-aware AI responses.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Tinycast uses your microphone to transcribe your speech into text when you dictate.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Tinycast uses on-device speech recognition to transcribe your speech privately without sending audio to the cloud.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Tinycast</string>
 </dict>

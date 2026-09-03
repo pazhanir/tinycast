@@ -127,6 +127,9 @@ final class LauncherCoordinator {
         switch id {
         case .aiChat:
             core.aiChatCoordinator.showChat()
+        case .dictateText:
+            dismissPalette()
+            core.dictationCoordinator.toggleDictation()
         case .fixGrammar:
             core.quickActionCoordinator.run(.fixGrammar)
         case .rewrite:

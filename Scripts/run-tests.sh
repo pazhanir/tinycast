@@ -138,6 +138,10 @@ run palette-tab-test       Tinycast/Palette/PaletteMode.swift \
                            Tinycast/Palette/PaletteTabAction.swift \
                            Tinycast/Features/Quicklinks/Model/Quicklink.swift \
                            Tinycast/Features/CustomCommands/Model/CustomCommand.swift
+run dictation-test         Tinycast/Features/Dictation/Model/WAVAudioSerializer.swift \
+                           Tinycast/Features/Dictation/Model/DictationStyle.swift \
+                           Tinycast/Features/Dictation/Model/DictationProvider.swift \
+                           Tinycast/Features/Dictation/Service/DictationContextExtractor.swift
 run fallback-test          Tinycast/Features/Launcher/Model/Fallback.swift \
                            Tinycast/Features/Launcher/Model/CommandID.swift \
                            Tinycast/Features/HotKeys/Model/HotKeyAction.swift \

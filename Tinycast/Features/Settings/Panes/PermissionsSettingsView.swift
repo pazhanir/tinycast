@@ -4,6 +4,7 @@ import SwiftUI
 struct PermissionsSettingsView: View {
     @State private var accessibilityTrusted = Permissions.isAccessibilityTrusted()
     @State private var calendarAccess = Permissions.calendarAccess()
+    @State private var microphoneAccess = Permissions.microphoneAccess()
     private let refreshTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -50,11 +51,29 @@ struct PermissionsSettingsView: View {
                     Button("Open…") { Permissions.openCalendarSettings() }
                 } label: {
                     Text("Manage in System Settings")
-                    // Only the Calendar pane's own switch may ask for this, so this never prompts.
                     Text("Opens Privacy & Security › Calendars.")
                 }
             } header: {
                 SettingsSectionHeader(.permissionsCalendars)
+            }
+
+            Section {
+                LabeledContent {
+                    Label(microphoneStatus.title, systemImage: microphoneStatus.symbol)
+                        .foregroundStyle(microphoneStatus.tint)
+                } label: {
+                    SettingsRowTitle(.permissionsMicrophone, "Microphone")
+                    Text("Lets Tinycast record your voice for speech-to-text dictation.")
+                }
+
+                LabeledContent {
+                    Button("Open…") { Permissions.openMicrophoneSettings() }
+                } label: {
+                    Text("Manage in System Settings")
+                    Text("Opens Privacy & Security › Microphone.")
+                }
+            } header: {
+                SettingsSectionHeader(.permissionsMicrophone)
             }
         }
         .formStyle(.grouped)
@@ -71,10 +90,20 @@ struct PermissionsSettingsView: View {
         }
     }
 
+    private var microphoneStatus: (title: String, symbol: String, tint: Color) {
+        switch microphoneAccess {
+        case .granted: return ("Granted", "checkmark.circle.fill", .green)
+        case .notDetermined: return ("Not asked yet", "questionmark.circle.fill", .secondary)
+        case .denied: return ("Not granted", "exclamationmark.triangle.fill", .orange)
+        }
+    }
+
     private func refresh() {
         let trusted = Permissions.isAccessibilityTrusted()
         if trusted != accessibilityTrusted { accessibilityTrusted = trusted }
         let access = Permissions.calendarAccess()
         if access != calendarAccess { calendarAccess = access }
+        let mic = Permissions.microphoneAccess()
+        if mic != microphoneAccess { microphoneAccess = mic }
     }
 }

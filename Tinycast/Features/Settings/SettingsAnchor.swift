@@ -40,6 +40,8 @@ extension SettingsAnchor {
     static let aiMCPServers = Self(tab: .ai, title: "MCP Servers")
     static let aiCommands = Self(tab: .ai, title: "Commands")
 
+    static let dictation = Self(tab: .dictation, title: "Dictation")
+
     static let quickActionsQuickActions = Self(tab: .quickActions, title: "Quick Actions")
     static let quickActionsActions = Self(tab: .quickActions, title: "Actions")
     static let quickActionsModel = Self(tab: .quickActions, title: "Model")
@@ -83,6 +85,7 @@ extension SettingsAnchor {
 
     static let permissionsAccessibility = Self(tab: .permissions, title: "Accessibility")
     static let permissionsCalendars = Self(tab: .permissions, title: "Calendars")
+    static let permissionsMicrophone = Self(tab: .permissions, title: "Microphone")
 
     static let backupExport = Self(tab: .backup, title: "Export")
     static let backupImport = Self(tab: .backup, title: "Import")

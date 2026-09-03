@@ -109,7 +109,7 @@ enum SettingsSearchCatalog {
 
     static let entries: [SettingsSearchEntry] =
         general + applications + systemSettings
-        + systemActions + commands + quicklinks + fallbacks + ai + quickActions + fileSearch + notes
+        + systemActions + commands + quicklinks + fallbacks + ai + dictation + quickActions + fileSearch + notes
         + snippets + windowManagement + clipboard + emoji + calendar + extensions + permissions
         + backup + about
 
@@ -273,6 +273,17 @@ enum SettingsSearchCatalog {
         .init(
             group: .aiCommands, "AI commands",
             keywords: ["shortcut", "launcher", "chat"])
+    ]
+
+    private static let dictation: [SettingsSearchEntry] = [
+        .init(pane: .dictation, keywords: ["whisper", "speech", "voice", "transcribe", "groq", "audio", "mic", "microphone"]),
+        .init(.dictation, "Enable Dictation", keywords: ["speech", "voice", "transcribe"]),
+        .init(.dictation, "Transcription Engine", keywords: ["groq", "whisper", "apple", "speech", "on-device"]),
+        .init(.dictation, "Groq API Key", keywords: ["api", "token", "secret", "groq"]),
+        .init(.dictation, "Transcription Style", keywords: ["email", "messaging", "raw", "formatting"]),
+        .init(.dictation, "Use App Context", keywords: ["active window", "privacy", "frontmost"]),
+        .init(.dictation, "Custom Vocabulary", keywords: ["words", "jargon", "dictionary"]),
+        .init(.dictation, "Audio Feedback", keywords: ["sound", "chime", "beep"])
     ]
 
     private static let quickActions: [SettingsSearchEntry] = [

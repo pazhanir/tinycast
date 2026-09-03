@@ -13,12 +13,29 @@ struct KeychainSecretStore: Sendable {
     /// Every scope the app stores under, named here so the whole keychain surface is one list.
     static let aiAPIKeys = KeychainSecretStore(scope: "ai-api-keys")
     static let mcpSecrets = KeychainSecretStore(scope: "mcp-secrets")
+    static let dictation = KeychainSecretStore(scope: "dictation")
 
     init(scope: String, bundleIdentifier: String? = Bundle.main.bundleIdentifier) {
         service = "\(bundleIdentifier ?? "com.tinycast.app").\(scope)"
     }
 
     func secret(for account: UUID) throws -> String? {
+        try secret(for: account.uuidString)
+    }
+
+    func hasSecret(for account: UUID) throws -> Bool {
+        try hasSecret(for: account.uuidString)
+    }
+
+    func setSecret(_ secret: String, for account: UUID) throws {
+        try setSecret(secret, for: account.uuidString)
+    }
+
+    func removeSecret(for account: UUID) throws {
+        try removeSecret(for: account.uuidString)
+    }
+
+    func secret(for account: String) throws -> String? {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(
             query(for: account, returningData: true) as CFDictionary, &result)
@@ -31,7 +48,7 @@ struct KeychainSecretStore: Sendable {
     }
 
     /// Presence check without `kSecReturn*`, so no secret bytes are materialized.
-    func hasSecret(for account: UUID) throws -> Bool {
+    func hasSecret(for account: String) throws -> Bool {
         let status = SecItemCopyMatching(
             query(for: account, returningData: false) as CFDictionary, nil)
         if status == errSecItemNotFound { return false }
@@ -39,7 +56,7 @@ struct KeychainSecretStore: Sendable {
         return true
     }
 
-    func setSecret(_ secret: String, for account: UUID) throws {
+    func setSecret(_ secret: String, for account: String) throws {
         guard let data = secret.data(using: .utf8) else { throw StoreError.invalidEncoding }
         let lookup = query(for: account, returningData: false)
         let update = [kSecValueData as String: data]
@@ -54,18 +71,18 @@ struct KeychainSecretStore: Sendable {
         }
     }
 
-    func removeSecret(for account: UUID) throws {
+    func removeSecret(for account: String) throws {
         let status = SecItemDelete(query(for: account, returningData: false) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw StoreError.keychain(status)
         }
     }
 
-    private func query(for account: UUID, returningData: Bool) -> [String: Any] {
+    private func query(for account: String, returningData: Bool) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account.uuidString
+            kSecAttrAccount as String: account
         ]
         if returningData {
             query[kSecReturnData as String] = true
