@@ -16,6 +16,10 @@ final class DictationSettingsStore {
         didSet { defaults.set(provider.rawValue, forKey: Keys.provider) }
     }
 
+    var groqBaseURL: String {
+        didSet { defaults.set(groqBaseURL, forKey: Keys.groqBaseURL) }
+    }
+
     var groqModel: String {
         didSet { defaults.set(groqModel, forKey: Keys.groqModel) }
     }
@@ -56,6 +60,7 @@ final class DictationSettingsStore {
         self.isEnabled = defaults.object(forKey: Keys.isEnabled) as? Bool ?? true
         let savedProvider = defaults.string(forKey: Keys.provider).flatMap(DictationProvider.init) ?? .groq
         self.provider = savedProvider
+        self.groqBaseURL = defaults.string(forKey: Keys.groqBaseURL) ?? "https://api.groq.com/openai/v1"
         self.groqModel = defaults.string(forKey: Keys.groqModel) ?? "whisper-large-v3-turbo"
         self.language = defaults.string(forKey: Keys.language) ?? "auto"
         let savedStyle = defaults.string(forKey: Keys.style).flatMap(DictationStyle.init) ?? .default
@@ -72,6 +77,7 @@ final class DictationSettingsStore {
     private enum Keys {
         static let isEnabled = "dictation.isEnabled"
         static let provider = "dictation.provider"
+        static let groqBaseURL = "dictation.groqBaseURL"
         static let groqModel = "dictation.groqModel"
         static let language = "dictation.language"
         static let style = "dictation.style"

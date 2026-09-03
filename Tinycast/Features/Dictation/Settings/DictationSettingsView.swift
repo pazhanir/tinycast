@@ -41,49 +41,70 @@ struct DictationSettingsView: View {
             }
             .settingsEnabled(settings.isEnabled)
 
-            // Transcription Provider
+            // Provider Section (matches AI Configuration API Compatible style)
             Section {
-                Picker(selection: $settings.provider) {
-                    ForEach(DictationProvider.allCases) { provider in
-                        VStack(alignment: .leading) {
-                            Text(provider.title)
+                editorField("Provider") {
+                    Picker("Provider", selection: $settings.provider) {
+                        ForEach(DictationProvider.allCases) { provider in
+                            Text(provider.title).tag(provider)
                         }
-                        .tag(provider)
                     }
-                } label: {
-                    SettingsRowTitle(.dictation, "Transcription Engine")
-                    Text(settings.provider.subtitle)
+                    .labelsHidden()
                 }
 
                 if settings.provider == .groq {
-                    LabeledContent {
-                        HStack(spacing: 8) {
-                            SecureField("gsk_...", text: $settings.groqApiKey)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(maxWidth: 240)
+                    editorField("Base URL") {
+                        TextField(
+                            "Base URL",
+                            text: $settings.groqBaseURL,
+                            prompt: Text("https://api.groq.com/openai/v1")
+                        )
+                    }
+
+                    editorField("API Key") {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            SecureField(
+                                "API Key",
+                                text: $settings.groqApiKey,
+                                prompt: Text(settings.groqApiKey.isEmpty ? "Paste API key" : "Leave blank to keep saved key")
+                            )
 
                             Button("Get Key") {
                                 if let url = URL(string: "https://console.groq.com/keys") {
                                     NSWorkspace.shared.open(url)
                                 }
                             }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                    } label: {
-                        SettingsRowTitle(.dictation, "Groq API Key")
-                        Text("Free tier includes up to 2 hours of audio per day.")
                     }
 
-                    LabeledContent {
-                        TextField("whisper-large-v3-turbo", text: $settings.groqModel)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 240)
-                    } label: {
-                        SettingsRowTitle(.dictation, "Model")
-                        Text("Defaults to whisper-large-v3-turbo.")
+                    if !settings.groqApiKey.isEmpty {
+                        Label("A key is stored in Keychain", systemImage: "lock.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    editorField("Model ID") {
+                        TextField(
+                            "Model ID",
+                            text: $settings.groqModel,
+                            prompt: Text("whisper-large-v3-turbo")
+                        )
                     }
                 }
             } header: {
-                Text("Engine & Provider")
+                Text("Provider")
+            } footer: {
+                if settings.provider == .groq {
+                    Text("Uses OpenAI-compatible audio transcription endpoints. Custom endpoints and models are supported. API keys stay in your login Keychain.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Transcribes audio completely offline using macOS on-device speech recognition. No internet or API key required.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .settingsEnabled(settings.isEnabled)
 
@@ -129,6 +150,20 @@ struct DictationSettingsView: View {
         }
         .formStyle(.grouped)
         .settingsScrollTarget(.dictation)
+    }
+
+    private func editorField<Content: View>(
+        _ title: String, @ViewBuilder content: () -> Content
+    ) -> some View {
+        LabeledContent {
+            content()
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        } label: {
+            Text(title).font(.callout.weight(.medium))
+        }
     }
 
     private func visibilityBinding(_ entry: AppEntry) -> Binding<Bool> {

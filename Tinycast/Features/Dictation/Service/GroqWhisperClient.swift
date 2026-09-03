@@ -15,6 +15,27 @@ struct GroqWhisperClient: DictationTranscriptionEngine {
         self.baseURL = baseURL
     }
 
+    init(
+        apiKey: String,
+        model: String = "whisper-large-v3-turbo",
+        baseURLString: String = ""
+    ) {
+        self.apiKey = apiKey
+        self.model = model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "whisper-large-v3-turbo" : model
+
+        let cleanBase = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanBase.isEmpty {
+            self.baseURL = URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!
+        } else {
+            let stripped = cleanBase.hasSuffix("/") ? String(cleanBase.dropLast()) : cleanBase
+            if stripped.hasSuffix("/audio/transcriptions") {
+                self.baseURL = URL(string: stripped) ?? URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!
+            } else {
+                self.baseURL = URL(string: "\(stripped)/audio/transcriptions") ?? URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!
+            }
+        }
+    }
+
     func transcribe(
         wavData: Data,
         prompt: String?,
@@ -24,7 +45,7 @@ struct GroqWhisperClient: DictationTranscriptionEngine {
             throw NSError(
                 domain: "GroqWhisperClient",
                 code: 401,
-                userInfo: [NSLocalizedDescriptionKey: "Groq API key is missing. Add your key in Settings › Dictation."]
+                userInfo: [NSLocalizedDescriptionKey: "API key is missing. Add your key in Settings › Dictation."]
             )
         }
 

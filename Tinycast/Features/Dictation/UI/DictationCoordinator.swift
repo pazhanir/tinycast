@@ -117,7 +117,8 @@ final class DictationCoordinator {
             case .groq:
                 engine = GroqWhisperClient(
                     apiKey: settings.groqApiKey,
-                    model: settings.groqModel
+                    model: settings.groqModel,
+                    baseURLString: settings.groqBaseURL
                 )
             case .onDeviceAppleSpeech:
                 engine = AppleSpeechTranscriber(
@@ -159,25 +160,20 @@ final class DictationCoordinator {
     }
 
     func cancelDictation() {
+        guard isDictating else { return }
         isDictating = false
         removeKeyMonitor()
         recorder.cancelRecording()
         transcriptionTask?.cancel()
+        transcriptionTask = nil
         hud.dismiss()
     }
-
-    // MARK: - Key Event Monitor
 
     private func installKeyMonitor() {
         removeKeyMonitor()
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.isDictating else { return event }
-
-            if event.keyCode == 36 { // Return
-                self.stopAndTranscribe()
-                return nil
-            } else if event.keyCode == 53 { // Escape
-                self.cancelDictation()
+            if event.keyCode == 53 { // ESC
+                self?.cancelDictation()
                 return nil
             }
             return event
