@@ -167,6 +167,11 @@ SwiftLint owns the rules that catch defects, including the two checkable comment
 formatter, deliberately — the configuration and the measurements behind that are in
 [development.md](development.md#formatting).
 
+The script then runs `Scripts/check-settings-search.js`, one check SwiftLint can't: every
+`SettingsAnchor` must be claimed by a section, and every row in `SettingsSearchCatalog` must be
+marked by a `SettingsRowTitle`. Either gap compiles and reads fine, and fails only at runtime as a
+search result that navigates and then sits there.
+
 ## Performance measurement
 
 `Platform/Signposts.swift` emits eight intervals on the `com.tinycast.perf` subsystem: `AppCore.start`,
@@ -324,7 +329,10 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
   creates
 - Empty switcher search reads the complete recent list; title and body searches rank correctly and a
   superseded query never publishes
-- Inline rename updates the Markdown filename without changing source; collisions receive a suffix
+- An Untitled note titles itself from its first line as it is typed, in the title bar and — after the
+  autosave — in the browse list; naming it replaces that, and clearing the name brings it back
+- Inline rename updates the Markdown filename without changing source, and starts from that filename
+  even where the row shows a derived title; collisions receive a suffix
 - Delete confirms through Tinycast, moves the file to Trash, and selecting another note never loses an
   unsaved edit
 - An existing `Floating Note.md` appears as an ordinary note without conversion

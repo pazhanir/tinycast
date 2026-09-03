@@ -19,11 +19,11 @@ struct AISettingsView: View {
         return Form {
             Section {
                 Toggle(isOn: $appSettings.aiEnabled) {
-                    Text("Enable AI")
+                    SettingsRowTitle(.aiAI, "Enable AI")
                     Text("Chat with the model you choose; nothing is loaded or sent until it is on.")
                 }
             } header: {
-                Text("AI")
+                SettingsSectionHeader(.aiAI)
             }
 
             AICommandSection()
@@ -43,6 +43,7 @@ struct AISettingsView: View {
                 .settingsEnabled(appSettings.aiEnabled)
         }
         .formStyle(.grouped)
+        .settingsScrollTarget(.ai)
         .sheet(item: $editor) { target in
             AIConnectionEditorSheet(
                 target: target,
@@ -93,7 +94,7 @@ struct AISettingsView: View {
                         }
                     }
                 } label: {
-                    Text("Default model")
+                    SettingsRowTitle(.aiDefault, "Default model")
                     Text("Used by Tinycast features unless they ask you to choose another model.")
                 }
                 if let efforts = selectedSubscriptionModel?.efforts, !efforts.isEmpty {
@@ -102,13 +103,13 @@ struct AISettingsView: View {
                             Text(effort.title).tag(effort.id)
                         }
                     } label: {
-                        Text("Reasoning effort")
+                        SettingsRowTitle(.aiDefault, "Reasoning effort")
                         Text("Applied when the default model uses your ChatGPT subscription.")
                     }
                 }
             }
         } header: {
-            Text("Default")
+            SettingsSectionHeader(.aiDefault)
         } footer: {
             Text(defaultModelFooter)
                 .font(.caption)
@@ -134,27 +135,27 @@ struct AISettingsView: View {
         @Bindable var settings = settings
         return Section {
             Toggle(isOn: $settings.webSearchEnabled) {
-                Text("Web search")
-                Text("Sends prompts on to a search engine when the route offers one — ChatGPT and OpenRouter. Otherwise, seamlessly activates local web search")
+                SettingsRowTitle(.aiChat, "Web search")
+                Text("Sends prompts on to a search engine when the route offers one — ChatGPT and OpenRouter. Otherwise, seamlessly activates local web search.")
             }
-            Toggle(isOn: $settings.calculatorToolEnabled) {
-                Text("Calculator")
+            Toggle(isOn: .calculatorToolEnabled) {
+                SettingsRowTitle(.aiChat, "Calculator")
                 Text("Evaluates mathematical expressions and conversions.")
             }
-            Toggle(isOn: $settings.weatherToolEnabled) {
-                Text("Weather")
+            Toggle(isOn: .weatherToolEnabled) {
+                SettingsRowTitle(.aiChat, "Weather")
                 Text("Looks up live weather and forecasts.")
             }
-            Toggle(isOn: $settings.locationToolEnabled) {
-                Text("Location")
+            Toggle(isOn: .locationToolEnabled) {
+                SettingsRowTitle(.aiChat, "Location")
                 Text("Provides current location context for location-based requests.")
             }
-            Toggle(isOn: $settings.extensionToolsEnabled) {
-                Text("Extension AI commands")
+            Toggle(isOn: .extensionToolsEnabled) {
+                SettingsRowTitle(.aiChat, "Extension AI commands")
                 Text("Allows AI to run commands from installed Raycast extensions.")
             }
         } header: {
-            Text("Chat")
+            SettingsSectionHeader(.aiChat)
         } footer: {
             Text("When enabled, the model can automatically use these tools during chat conversations.")
                 .font(.caption)
@@ -168,26 +169,26 @@ struct AISettingsView: View {
             Picker(selection: $settings.opensTo) {
                 ForEach(AIOpensTo.allCases) { Text($0.title).tag($0) }
             } label: {
-                Text("Opens to")
+                SettingsRowTitle(.aiConversations, "Opens to")
                 Text("What summoning AI Chat lands on.")
             }
             if settings.opensTo == .recent {
                 Picker(selection: $settings.newChatAfter) {
                     ForEach(AINewChatAfter.allCases) { Text($0.title).tag($0) }
                 } label: {
-                    Text("Start a new conversation after")
+                    SettingsRowTitle(.aiConversations, "Start a new conversation after")
                     Text("Idle this long and the next summon starts fresh instead.")
                 }
             }
             Picker(selection: $settings.retention) {
                 ForEach(AIRetention.allCases) { Text($0.title).tag($0) }
             } label: {
-                Text("Keep conversations")
+                SettingsRowTitle(.aiConversations, "Keep conversations")
                 Text("Older conversations are deleted permanently.")
             }
             .onChange(of: settings.retention) { core.aiChatCoordinator.applyRetention() }
         } header: {
-            Text("Conversations")
+            SettingsSectionHeader(.aiConversations)
         } footer: {
             Text(
                 "Conversations stay on this Mac. Nothing here is carried in a settings backup — which "
@@ -202,13 +203,13 @@ struct AISettingsView: View {
         @Bindable var settings = settings
         return Section {
             Toggle(isOn: $settings.systemPromptEnabled) {
-                Text("Send a system prompt")
+                SettingsRowTitle(.aiSystemPrompt, "Send a system prompt")
                 Text("Off sends nothing ahead of your message, not even what Tinycast says about itself.")
             }
             SystemPromptEditor(text: $settings.systemPrompt)
                 .settingsEnabled(settings.systemPromptEnabled)
         } header: {
-            Text("System prompt")
+            SettingsSectionHeader(.aiSystemPrompt)
         } footer: {
             Text(
                 "Your text is sent ahead of every message in every chat, after what Tinycast already tells the model about itself — so both are billed again on each turn."
@@ -230,7 +231,7 @@ struct AISettingsView: View {
                 }
             }
         } header: {
-            Text("ChatGPT Subscription")
+            SettingsSectionHeader(.aiChatGPTSubscription)
         } footer: {
             Text(
                 "Uses OpenAI’s supported Codex App Server. The sign-in is stored in Tinycast’s "
@@ -319,16 +320,22 @@ struct AISettingsView: View {
                         onRemove: { pendingRemoval = connection })
                 }
             }
-            Button("Add API Connection…", systemImage: "plus") {
+            Button {
                 editor = AIConnectionEditorTarget(
                     connection: AIConnection(), hasStoredKey: false, isNew: true)
+            } label: {
+                Label {
+                    SettingsRowTitle(.aiAPIConnections, "Add API Connection")
+                } icon: {
+                    Image(systemName: "plus")
+                }
             }
             if keyError {
                 Label("The login Keychain could not be accessed.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             }
         } header: {
-            Text("API Connections")
+            SettingsSectionHeader(.aiAPIConnections)
         } footer: {
             Text(
                 "OpenAI, Claude, Gemini and OpenRouter are presets. Custom OpenAI-compatible "

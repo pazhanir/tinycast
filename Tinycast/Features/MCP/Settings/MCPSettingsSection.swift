@@ -11,7 +11,9 @@ struct MCPSettingsSection: View {
     var body: some View {
         @Bindable var appSettings = appSettings
         Section {
-            Toggle("Enable MCP servers", isOn: $appSettings.mcpEnabled)
+            Toggle(isOn: $appSettings.mcpEnabled) {
+                SettingsRowTitle(.aiMCPServers, "Enable MCP servers")
+            }
             Group {
                 if store.servers.isEmpty {
                     Text("No MCP servers yet.")
@@ -24,8 +26,14 @@ struct MCPSettingsSection: View {
                             onRemove: { pendingRemoval = server })
                     }
                 }
-                Button("Add MCP Server…", systemImage: "plus") {
+                Button {
                     editor = MCPServerEditorTarget(server: MCPServer(), isNew: true)
+                } label: {
+                    Label {
+                        SettingsRowTitle(.aiMCPServers, "Add MCP Server")
+                    } icon: {
+                        Image(systemName: "plus")
+                    }
                 }
                 .sheet(item: $editor) { target in
                     MCPServerEditor(target: target, onSave: save, onCancel: { editor = nil })
@@ -41,7 +49,7 @@ struct MCPSettingsSection: View {
             }
             .settingsEnabled(appSettings.mcpEnabled)
         } header: {
-            Text("MCP Servers")
+            SettingsSectionHeader(.aiMCPServers)
         } footer: {
             Text(
                 "Tools from every enabled server are offered to the model; type @slug to address "
