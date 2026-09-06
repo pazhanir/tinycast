@@ -201,6 +201,47 @@ struct AIProviderTests {
         expect(
             (router["reasoning"] as? [String: String])?["effort"] == "low",
             "OpenRouter receives the reasoning effort its catalog offered")
+
+        let openAIWithEffort = AIRequestBody.make(
+            AIRequest(messages: [AIMessage(role: .user, text: "hi")]),
+            configuration: AIHTTPConfiguration(
+                provider: .openAI, baseURL: URL(string: "https://api.openai.com/v1")!,
+                model: "o3-mini", effort: "high"))
+        expect(
+            openAIWithEffort["reasoning_effort"] as? String == "high",
+            "OpenAI receives reasoning_effort")
+
+        let anthropicWithEffort = AIRequestBody.make(
+            AIRequest(messages: [AIMessage(role: .user, text: "hi")]),
+            configuration: AIHTTPConfiguration(
+                provider: .anthropic, baseURL: URL(string: "https://api.anthropic.com")!,
+                model: "claude-3-7-sonnet", effort: "medium"))
+        let anthropicThinking = anthropicWithEffort["thinking"] as? [String: Any]
+        expect(
+            anthropicThinking?["type"] as? String == "enabled"
+                && anthropicThinking?["budget_tokens"] as? Int == 2048,
+            "Anthropic receives thinking configuration with budget_tokens")
+        expect(
+            (anthropicWithEffort["max_tokens"] as? Int ?? 0) >= 3072,
+            "Anthropic max_tokens exceeds budget_tokens")
+
+        expect(
+            AIConnection.defaultReasoningOptions(for: "o3-mini", provider: .openAI)?.efforts == [
+                "low", "medium", "high"
+            ],
+            "o3-mini defaults to reasoning efforts")
+        expect(
+            AIConnection.defaultReasoningOptions(for: "claude-3-7-sonnet", provider: .anthropic)?.efforts == [
+                "low", "medium", "high"
+            ],
+            "claude-3-7 defaults to reasoning efforts on Anthropic")
+        expect(
+            AIConnection.defaultReasoningOptions(for: "deepseek-ai/DeepSeek-R1", provider: .openAICompatible)?
+                .efforts == ["low", "medium", "high"],
+            "DeepSeek R1 defaults to reasoning efforts")
+        expect(
+            AIConnection.defaultReasoningOptions(for: "gpt-4o", provider: .openAI) == nil,
+            "standard non-reasoning models have no default reasoning options")
     }
 
     static func providerPresetsResolveEndpoints() {
@@ -463,6 +504,35 @@ struct AIProviderTests {
             anthropicEvents.contains(.usage(AIUsage(inputTokens: 4, outputTokens: 1))),
             "Anthropic usage accumulates across events")
         expect(anthropicEvents.last == .finished, "Anthropic message_stop terminates the stream")
+
+        var deepSeekStream = AIStreamDecoder(shape: .openAICompatible)
+        let deepSeekData = Data(
+            """
+            data: {"choices":[{"delta":{"reasoning_content":"thinking process"}}]}
+
+            data: {"choices":[{"delta":{"content":"final answer"}}]}
+
+            data: [DONE]
+
+            """.utf8)
+        let deepSeekEvents =
+            ((try? deepSeekStream.feed(deepSeekData)) ?? []) + ((try? deepSeekStream.finish()) ?? [])
+        expect(deepSeekEvents.contains(.thinking), "reasoning_content emits thinking event")
+        expect(
+            deepSeekEvents.contains(.text("final answer")), "final text after reasoning_content is decoded")
+
+        var geminiThoughtStream = AIStreamDecoder(shape: .openAICompatible)
+        let geminiThought = Data(
+            """
+            data: {"choices":[{"delta":{"thought":"gemini thought"}}]}
+
+            data: [DONE]
+
+            """.utf8)
+        let geminiEvents =
+            ((try? geminiThoughtStream.feed(geminiThought)) ?? [])
+            + ((try? geminiThoughtStream.finish()) ?? [])
+        expect(geminiEvents.contains(.thinking), "thought field emits thinking event")
     }
 
     /// Real OpenRouter captures, with the reasoning ones proving thought never leaks into text.

@@ -79,7 +79,9 @@ enum AIModelDiscovery {
         return Query(request: request, responseShape: usesNativeGemini ? .gemini : .openAI)
     }
 
-    static func decode(_ data: Data, shape: Query.ResponseShape) throws -> [Model] {
+    static func decode(
+        _ data: Data, shape: Query.ResponseShape, provider: AIProviderKind? = nil
+    ) throws -> [Model] {
         switch shape {
         case .openAI:
             let response = try JSONDecoder().decode(OpenAIResponse.self, from: data)
@@ -92,7 +94,9 @@ enum AIModelDiscovery {
                             AIConnection.ReasoningOptions(
                                 efforts: $0.supportedEfforts ?? [],
                                 defaultEffort: $0.defaultEffort)
-                        })
+                        }
+                            ?? AIConnection.defaultReasoningOptions(
+                                for: $0.id, provider: provider ?? .openAICompatible))
                 })
         case .gemini:
             let response = try JSONDecoder().decode(GeminiResponse.self, from: data)
@@ -104,7 +108,9 @@ enum AIModelDiscovery {
                     let id =
                         model.name.hasPrefix("models/")
                         ? String(model.name.dropFirst("models/".count)) : model.name
-                    return Model(id: id, name: model.displayName ?? id)
+                    return Model(
+                        id: id, name: model.displayName ?? id,
+                        reasoningOptions: AIConnection.defaultReasoningOptions(for: id, provider: .gemini))
                 })
         }
     }

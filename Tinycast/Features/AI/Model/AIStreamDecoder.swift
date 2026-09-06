@@ -223,16 +223,22 @@ private struct OpenAIChunk: Decodable {
 
             let content: String?
             let reasoning: String?
+            let reasoningContent: String?
+            let thought: String?
             let reasoningDetails: [ReasoningDetail]?
             let toolCalls: [ToolCall]?
 
             var hasReasoning: Bool {
                 reasoning?.isEmpty == false
+                    || reasoningContent?.isEmpty == false
+                    || thought?.isEmpty == false
                     || reasoningDetails?.contains(where: { $0.text?.isEmpty == false }) == true
             }
 
             enum CodingKeys: String, CodingKey {
                 case content, reasoning
+                case reasoningContent = "reasoning_content"
+                case thought
                 case reasoningDetails = "reasoning_details"
                 case toolCalls = "tool_calls"
             }

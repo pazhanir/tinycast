@@ -24,7 +24,7 @@ final class AIModelDiscoveryService: Sendable {
         switch response.statusCode {
         case 200:
             do {
-                return try AIModelDiscovery.decode(data, shape: query.responseShape)
+                return try AIModelDiscovery.decode(data, shape: query.responseShape, provider: provider)
             } catch {
                 throw AIModelDiscovery.DiscoveryError.malformedResponse
             }

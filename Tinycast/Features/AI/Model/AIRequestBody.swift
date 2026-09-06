@@ -27,8 +27,12 @@ enum AIRequestBody {
         if input.webSearch, configuration.provider == .openRouter {
             body["plugins"] = [["id": "web"]]
         }
-        if let effort = configuration.effort, configuration.provider == .openRouter {
-            body["reasoning"] = ["effort": effort]
+        if let effort = configuration.effort {
+            if configuration.provider == .openRouter {
+                body["reasoning"] = ["effort": effort]
+            } else {
+                body["reasoning_effort"] = effort
+            }
         }
         if !input.tools.isEmpty {
             body["tools"] = input.tools.map {
@@ -57,6 +61,20 @@ enum AIRequestBody {
             "max_tokens": input.maxOutputTokens,
             "stream": true
         ]
+        if let effort = configuration.effort {
+            let budget: Int
+            switch effort.lowercased() {
+            case "low": budget = 1024
+            case "high": budget = 4096
+            default: budget = 2048
+            }
+            body["thinking"] = [
+                "type": "enabled",
+                "budget_tokens": budget
+            ]
+            let currentMax = body["max_tokens"] as? Int ?? input.maxOutputTokens
+            body["max_tokens"] = max(currentMax, budget + 1024)
+        }
         if !systemParts.isEmpty { body["system"] = systemParts.joined(separator: "\n\n") }
         if !input.tools.isEmpty {
             body["tools"] = input.tools.map {

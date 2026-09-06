@@ -54,7 +54,7 @@ struct AIConnection: Codable, Equatable, Identifiable, Sendable {
     var models: [String]
     /// Models the catalog marked as taking images — only OpenRouter's says, so only it is gated.
     var visionModels: [String]
-    /// OpenRouter's per-model catalog metadata; absent for APIs that do not publish this contract.
+    /// Per-model reasoning metadata; absent for APIs that do not publish this contract or unconfigured.
     var reasoningOptions: [String: ReasoningOptions]?
 
     init(
@@ -80,6 +80,37 @@ struct AIConnection: Codable, Equatable, Identifiable, Sendable {
         AIModelCapabilities(
             images: provider != .openRouter || visionModels.contains(model),
             webSearch: provider == .openRouter, tools: true)
+    }
+
+    func reasoningOptions(for model: String) -> ReasoningOptions? {
+        if let explicit = reasoningOptions?[model] {
+            return explicit.efforts.isEmpty ? nil : explicit
+        }
+        return Self.defaultReasoningOptions(for: model, provider: provider)
+    }
+
+    static func defaultReasoningOptions(for model: String, provider: AIProviderKind) -> ReasoningOptions? {
+        let lower = model.lowercased()
+        let isOpenAIReasoning =
+            lower.hasPrefix("o1") || lower.hasPrefix("o3") || lower.hasPrefix("o4")
+            || lower.contains("/o1") || lower.contains("/o3") || lower.contains("/o4")
+        let isClaudeReasoning =
+            provider == .anthropic
+            && (lower.contains("3-7") || lower.contains("3.7") || lower.contains("claude-4"))
+        let isGeminiThinking =
+            lower.contains("thinking")
+            || (provider == .gemini && (lower.contains("2.5") || lower.contains("thinking")))
+        let isDeepSeekReasoner =
+            lower.contains("deepseek-reasoner") || lower.contains("deepseek-r1") || lower.contains("r1")
+        let isOtherReasoning =
+            lower.contains("qwq") || lower.contains("reasoner") || lower.contains("reasoning")
+
+        if isOpenAIReasoning || isClaudeReasoning || isGeminiThinking || isDeepSeekReasoner
+            || isOtherReasoning
+        {
+            return ReasoningOptions(efforts: ["low", "medium", "high"], defaultEffort: "medium")
+        }
+        return nil
     }
 }
 
