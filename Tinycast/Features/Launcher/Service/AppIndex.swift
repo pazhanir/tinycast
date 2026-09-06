@@ -76,11 +76,11 @@ struct AppEntry: Identifiable, Hashable, Sendable {
     let kind: Kind
     /// Secondary label beside the name, for an entry whose name alone can't say what it acts on.
     var subtitle: String?
-    /// Extra strings matching as strongly as the name; empty for every kind but snippets.
+    /// Other names as strong as the display name: a snippet's keyword, the name in an Info.plist.
     var matchAliases: [String] = []
     /// Per-item symbol, for the one kind whose glyph is the user's choice. Nil elsewhere.
     var symbolName: String?
-    /// Spotlight's `kMDItemAlternateNames`, ranked below the display name. Applications only.
+    /// Other ways to say this entry's name: Spotlight alternates, localizations, romanizations.
     var alternateNames: [String] = []
     /// `CFBundleExecutable`, matched literally as a last resort. Applications only.
     var executableName: String?
@@ -90,14 +90,35 @@ struct AppEntry: Identifiable, Hashable, Sendable {
     var iconOverride: EntryIcon?
     /// What this entry comes from — an extension's title. Labels the row, and matches weakly.
     var ownerName: String?
+    /// The searchable form of every field above, built at publish by `buildAliases`.
+    var aliases: [SearchAlias] = []
 
     /// Stable identity for learned ranking, favorites, and other per-entry preferences.
     var preferenceKey: String { bundleID ?? id }
 
-    var searchFields: SearchFields {
-        SearchFields(
-            names: [name] + matchAliases, alternateNames: alternateNames, ownerName: ownerName,
-            bundleID: bundleID, executableName: executableName)
+    /// What this entry is called, in the shape `EntryNaming` reads.
+    var naming: EntryNaming.Sources {
+        var sources = EntryNaming.Sources(name: name)
+        sources.strongNames = matchAliases
+        sources.translations = alternateNames
+        sources.ownerName = ownerName
+        sources.bundleID = bundleID
+        sources.executableName = executableName
+        return sources
+    }
+
+    /// Built once per index change, never per keystroke; only `AppIndex.named` calls it.
+    mutating func buildAliases() { aliases = EntryNaming.aliases(for: naming) }
+
+    /// Only a name the entry lacks adds anything; a bundle usually spells itself the same twice.
+    mutating func addStrongName(_ candidate: String) {
+        let existing = [name] + matchAliases
+        guard !candidate.isEmpty,
+            !existing.contains(where: {
+                FuzzyMatch.normalized($0) == FuzzyMatch.normalized(candidate)
+            })
+        else { return }
+        matchAliases.append(candidate)
     }
 
     var kindLabel: String { ownerName ?? kind.descriptor.label }
@@ -240,7 +261,7 @@ final class AppIndex {
     private var meetingEntries: [AppEntry] = []
     /// The catalog's commands a disabled feature hides; the Commands slice is recomputed from it.
     private var hiddenCommands: Set<CommandID> = []
-    private var alternateNameCache = SpotlightNames.Cache()
+    private var nameCache = BundleNameCache()
     private var paneCache: SettingsPaneScanner.Cache?
     private var isRefreshing = false
     /// Set when a refresh lands mid-scan, so a scope edit is never silently dropped.
@@ -372,14 +393,13 @@ final class AppIndex {
         repeat {
             refreshPending = false
             let scopes = settings?.searchScopes ?? SearchScopes.defaults
-            let reusing = alternateNameCache
             let reusingPanes = paneCache
+            let languages = BundleLocalization.indexedLanguages(Locale.preferredLanguages)
+            let reusing = BundleNameCache(reusing: nameCache, languages: languages)
             let (found, cache, panes) = await Task.detached(priority: .utility) {
-                AppIndex.scan(
-                    scopes: scopes, cache: SpotlightNames.Cache(reusing: reusing),
-                    paneCache: reusingPanes)
+                AppIndex.scan(scopes: scopes, cache: reusing, paneCache: reusingPanes)
             }.value
-            alternateNameCache = cache
+            nameCache = cache
             paneCache = panes
             guard found != discoveredEntries else { continue }
             discoveredEntries = found
@@ -388,31 +408,37 @@ final class AppIndex {
     }
 
     nonisolated private static func scan(
-        scopes: [String], cache: SpotlightNames.Cache, paneCache: SettingsPaneScanner.Cache?
-    ) -> ([AppEntry], SpotlightNames.Cache, SettingsPaneScanner.Cache?) {
+        scopes: [String], cache: BundleNameCache, paneCache: SettingsPaneScanner.Cache?
+    ) -> ([AppEntry], BundleNameCache, SettingsPaneScanner.Cache?) {
         Signposts.interval("AppIndex.scan") {
             var cache = cache
-            var seenBundleIDs = Set<String>()
+            var indexByBundleID: [String: Int] = [:]
             var result: [AppEntry] = []
             for url in SearchScopes.appBundles(in: scopes) {
                 let bundle = Bundle(url: url)
                 let bundleID = bundle?.bundleIdentifier
-                // Dedup by bundle id; the earliest scope wins.
-                if let bundleID, !seenBundleIDs.insert(bundleID).inserted { continue }
+                let fileName = EntryNaming.strippingAppExtension(url.lastPathComponent)
+                // Dedup by bundle id; the first scope wins, but a renamed copy lends its name.
+                if let bundleID, let first = indexByBundleID[bundleID] {
+                    result[first].addStrongName(fileName)
+                    continue
+                }
 
-                let name =
-                    bundle?.installedAppName ?? url.deletingPathExtension().lastPathComponent
+                let names = cache.names(for: url)
+                // Finder's rule: LaunchServices ignores a display name the file name contradicts.
+                let name = names.localized.first ?? fileName
                 let executable =
                     bundle?.object(forInfoDictionaryKey: "CFBundleExecutable") as? String
-                result.append(
-                    AppEntry(
-                        id: url.path, name: name, url: url, bundleID: bundleID,
-                        kind: .application,
-                        alternateNames: cache.alternateNames(for: url, displayName: name),
-                        // A binary named after the app adds nothing the display name lacks.
-                        executableName: executable.flatMap {
-                            $0.caseInsensitiveCompare(name) == .orderedSame ? nil : $0
-                        }, iconStamp: FileIconStamp.value(for: url)))
+                var entry = AppEntry(
+                    id: url.path, name: name, url: url, bundleID: bundleID,
+                    kind: .application,
+                    alternateNames: Array(names.localized.dropFirst()) + names.alternates,
+                    executableName: executable, iconStamp: FileIconStamp.value(for: url))
+                entry.addStrongName(fileName)
+                // Still searchable, never the label: `code` must keep finding Visual Studio Code.
+                if let declared = bundle?.installedAppName { entry.addStrongName(declared) }
+                if let bundleID { indexByBundleID[bundleID] = result.count }
+                result.append(entry)
             }
             // Slice order is section order, so the flat selection maps 1:1 onto rows.
             let apps = result.sorted {
@@ -420,16 +446,27 @@ final class AppIndex {
             }
             // Settings panes are `.appex` bundles, which carry no Spotlight alternate names.
             let (panes, panesCache) = SettingsPaneScanner.scan(cache: paneCache)
-            return (apps + panes, cache, panesCache)
+            // Named here, not at publish: romanizing a CJK index is ~50 ms of main-actor time.
+            return (AppIndex.named(apps + panes), cache, panesCache)
+        }
+    }
+
+    /// The searchable form of every name an entry carries. `scan` names the app slice itself.
+    nonisolated private static func named(_ entries: [AppEntry]) -> [AppEntry] {
+        entries.map { entry in
+            var entry = entry
+            entry.buildAliases()
+            return entry
         }
     }
 
     private func publishEntries() {
         // Each slice arrives in its own display order; the slice order is the section order.
         let updated =
-            meetingEntries + discoveredEntries + extensionEntries + quicklinkEntries + snippetEntries
-            + Self.systemActionEntries + windowCommandEntries + customCommandEntries
-            + commandEntries
+            Self.named(meetingEntries) + discoveredEntries
+            + Self.named(
+                extensionEntries + quicklinkEntries + snippetEntries + Self.systemActionEntries
+                    + windowCommandEntries + customCommandEntries + commandEntries)
         guard updated != apps else { return }
         apps = updated
         entriesRevision &+= 1
@@ -438,6 +475,7 @@ final class AppIndex {
     /// Ranked matches, or a whole category when the query names one. Empty returns the full list.
     func matches(_ query: String, limit: Int = 200) -> [AppEntry] {
         let q = query.trimmingCharacters(in: .whitespaces)
+        // The opening list stays alphabetical: a list that reorders as you use it is unscannable.
         guard !q.isEmpty else { return apps }
         let key = MatchKey(
             query: q, entriesRevision: entriesRevision, rankingRevision: ranking.revision,
@@ -450,7 +488,7 @@ final class AppIndex {
 
     /// Slice order is section order, so filtering keeps sections and selection aligned.
     private func categoryListing(_ kind: AppEntry.Kind, query: String) -> [AppEntry] {
-        apps.filter { $0.kind == kind || $0.name.caseInsensitiveCompare(query) == .orderedSame }
+        apps.filter { $0.kind == kind || FuzzyMatch.normalized($0.name) == FuzzyMatch.normalized(query) }
     }
 
     /// The launcher's ordered list: ranked matches minus hidden entries, favorites pinned first.
@@ -473,26 +511,16 @@ final class AppIndex {
 
     private func rank(_ q: String, limit: Int) -> [AppEntry] {
         Signposts.interval("AppIndex.rank") {
-            let learned = ranking.boosts(query: q)
-            let query = FuzzyMatch.Query(q)
-            let scored = apps.compactMap { app -> (AppEntry, Int)? in
-                var fields = app.searchFields
-                fields.userAlias = aliases.alias(for: app.preferenceKey)
-                // Base relevance is the strongest field; the boost is added blind to it.
-                guard let score = SearchRelevance.score(query, fields: fields) else {
-                    return nil
-                }
-                return (app, score + (learned[app.preferenceKey] ?? 0))
-            }
-            return
-                scored
-                .sorted {
-                    $0.1 != $1.1
-                        ? $0.1 > $1.1
-                        : $0.0.name.localizedCaseInsensitiveCompare($1.0.name) == .orderedAscending
-                }
-                .prefix(limit)
-                .map(\.0)
+            let learned = ranking.usage(query: q)
+            return LauncherOrder.ranked(
+                apps, query: FuzzyMatch.Query(q), limit: limit,
+                fields: { app in
+                    guard let alias = self.aliases.alias(for: app.preferenceKey) else {
+                        return SearchFields(app.aliases)
+                    }
+                    return SearchFields(app.aliases + [.userAlias(alias)])
+                },
+                usage: { learned[$0.preferenceKey] ?? 0 }, name: \.name)
         }
     }
 }

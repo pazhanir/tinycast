@@ -54,6 +54,7 @@ final class AppCore {
     let mcp = MCPServerManager()
     let quickActionSettings = QuickActionSettingsStore()
     let chatGPTSubscription = ChatGPTSubscriptionManager()
+    let installedAI = InstalledAIManager()
 
     /// Set when a quicklink editor should open with Settings; the pane consumes it.
     var pendingQuicklinkEdit: QuicklinkEditRequest?
@@ -122,7 +123,8 @@ final class AppCore {
     @ObservationIgnored private(set) lazy var fallbackCoordinator = FallbackCoordinator(
         store: fallbacks, quicklinks: quicklinks, settings: settings, core: self)
     @ObservationIgnored private(set) lazy var clipboardCoordinator = ClipboardCoordinator(
-        clipboardStore: clipboardStore, palette: palette, windowController: windowController,
+        clipboardStore: clipboardStore, clipboardManager: clipboardManager, settings: settings,
+        appIndex: appIndex, palette: palette, windowController: windowController,
         paletteCoordinator: paletteCoordinator, core: self)
     @ObservationIgnored private(set) lazy var emojiCoordinator = EmojiCoordinator(
         frequentEmoji: frequentEmoji, settings: settings, windowController: windowController,
@@ -192,13 +194,12 @@ final class AppCore {
             applyAppearance()
             observeEffectiveAppearance()
 
-            clipboardStore.maxAge = settings.clipboardRetention.maxAge
-            // Defer the SQLite read + prune off the launch path; the palette fills in later.
-            Task { clipboardStore.load() }
-            clipboardManager.start()
-
             appIndex.start(settings: settings)
-            extensions.start(appIndex: appIndex, coordinator: extensionCoordinator, aiSettings: aiSettings, chatGPTSubscription: chatGPTSubscription)
+            clipboardCoordinator.applyEnabled()
+            extensions.start(
+                appIndex: appIndex, coordinator: extensionCoordinator,
+                aiSettings: aiSettings, chatGPTSubscription: chatGPTSubscription,
+                installedAI: installedAI)
             configureAITools()
             extensionCoordinator.applyEnabled()
             fileSearchCoordinator.applyEnabled()
@@ -353,11 +354,30 @@ final class AppCore {
         aiChat.cancel()
         chatGPTSubscription.stop()
         mcp.stop()
+        installedAI.stop()
+    }
+
+    @discardableResult
+    func applyInstalledAILifecycle() -> Task<Void, Never> {
+        let enabledKinds =
+            settings.aiEnabled || settings.quickActionsEnabled
+            ? aiSettings.enabledInstalledProviders : []
+        var tasks: [Task<Void, Never>] = []
+        if enabledKinds.contains(.codex) {
+            tasks.append(
+                chatGPTSubscription.phase == .idle
+                    ? chatGPTSubscription.refresh()
+                    : chatGPTSubscription.currentRefreshTask())
+        } else {
+            chatGPTSubscription.stop()
+        }
+        tasks.append(installedAI.ensure(enabledKinds: enabledKinds))
+        return Task { for task in tasks { await task.value } }
     }
 
     func aiProvider() throws -> any AIProvider {
         try AIProviderFactory.make(
-            settings: aiSettings, subscription: chatGPTSubscription)
+            settings: aiSettings, subscription: chatGPTSubscription, installedAI: installedAI)
     }
 
     /// Permissive guardrails: the text transformed is the reader's own, which `.default` refuses.
@@ -369,6 +389,7 @@ final class AppCore {
         }
         return try AIProviderFactory.make(
             selection: selection, settings: aiSettings, subscription: chatGPTSubscription,
+            installedAI: installedAI,
             guardrails: .permissiveContentTransformations)
     }
 
@@ -390,6 +411,8 @@ final class AppCore {
                 _ = $0.quicklinksEnabled
                 _ = $0.quicklinksShowInLauncher
             }, reproject: { $0.quicklinkCoordinator.applyQuicklinksPresence() })
+        track(
+            { _ = $0.clipboardEnabled }, reproject: { $0.clipboardCoordinator.applyEnabled() })
         track({ _ = $0.fileSearchEnabled }, reproject: { $0.fileSearchCoordinator.applyEnabled() })
         track({ _ = $0.notesEnabled }, reproject: { $0.notesCoordinator.applyEnabled() })
         track({ _ = $0.aiEnabled }, reproject: { $0.aiChatCoordinator.applyEnabled() })

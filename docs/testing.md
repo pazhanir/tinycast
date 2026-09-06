@@ -70,7 +70,8 @@ If a change touches anything in the right column, the harness on the left is man
 
 | Harness | Guards |
 | --- | --- |
-| `fuzz-test` | `Launcher/Model/SearchRelevance.swift` |
+| `fuzz-test` | `Launcher/Model/SearchRelevance.swift`, `EntryNaming.swift`, `ScriptRomanization.swift`, `LauncherOrder.swift` |
+| `corpus-test` | the launcher's ranking, over a dense synthetic index — **a new complaint is a new case in `Tests/launcher-corpus/corpus.json`** |
 | `file-search-test` | `FileSearch/Model/`, plus the shared `FuzzyMatch` scorer |
 | `file-search-session-test` | serialized query execution, debounce coalescing and cancellation |
 | `ranking-test` | `Launcher/Model/LauncherRankingStore.swift` |
@@ -262,6 +263,9 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 - ↵ pastes into the previous app; ⌥↵ pastes without closing the palette
 - A copy from an excluded app (Settings ▸ Clipboard ▸ Disabled Applications) is **not** recorded
 - Password-manager copies are still not recorded
+- Off (Settings ▸ Clipboard ▸ Enable Clipboard History): nothing new is recorded, the launcher row
+  and its shortcut are gone, the menu-bar row is gone, and Tab rings straight past the screen
+- Off then on again: existing clips come back; Clear history erases them while it is still off
 
 ### Launcher and icons
 

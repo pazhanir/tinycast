@@ -41,6 +41,7 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
     @ObservationIgnored private weak var coordinator: ExtensionCoordinator?
     @ObservationIgnored weak var aiSettings: AISettingsStore?
     @ObservationIgnored weak var chatGPTSubscription: ChatGPTSubscriptionManager?
+    @ObservationIgnored weak var installedAI: InstalledAIManager?
 
     /// The entry ids an uninstall invalidated, so another feature can drop what it keyed to them.
     @ObservationIgnored var onDidUninstall: (([String]) -> Void)?
@@ -62,12 +63,14 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
         appIndex: AppIndex,
         coordinator: ExtensionCoordinator,
         aiSettings: AISettingsStore? = nil,
-        chatGPTSubscription: ChatGPTSubscriptionManager? = nil
+        chatGPTSubscription: ChatGPTSubscriptionManager? = nil,
+        installedAI: InstalledAIManager? = nil
     ) {
         self.appIndex = appIndex
         self.coordinator = coordinator
         self.aiSettings = aiSettings
         self.chatGPTSubscription = chatGPTSubscription
+        self.installedAI = installedAI
         runtime.setDelegate(self)
         // Not gated on `isEnabled`: a stranded workspace is ours whether or not the feature is on.
         let temp = FileManager.default.temporaryDirectory

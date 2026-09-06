@@ -88,7 +88,11 @@ run() {
 }
 
 L=Tinycast/Features/Launcher/Model
-run slow -O fuzz-test      $L/SearchRelevance.swift
+run slow -O fuzz-test      $L/SearchRelevance.swift $L/ScriptRomanization.swift \
+                           $L/EntryNaming.swift $L/LauncherOrder.swift
+run slow -O corpus-test    $L/SearchRelevance.swift $L/ScriptRomanization.swift \
+                           $L/EntryNaming.swift $L/LauncherOrder.swift \
+                           $L/LauncherRankingStore.swift
 run file-search-test       $L/SearchRelevance.swift \
                            Tinycast/Features/FileSearch/Model/*.swift
 run file-search-session-test Tinycast/Platform/Signposts.swift \
@@ -102,12 +106,10 @@ run favorites-test         $L/FavoriteSlots.swift
 run calc-test              Tinycast/Features/Calculator/Model/*.swift
 run calendar-test          Tinycast/Features/Calendar/Model/*.swift
 run clipboard-test         Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
-                           Tinycast/Features/Clipboard/Model/ClipboardFilter.swift
-# Expires 2026-09-05, and fails this suite once it has: see Tinycast/Migration/.
-run storage-relocation-test Tinycast/Platform/AppPaths.swift \
-                            Tinycast/Migration/StorageRelocation.swift \
-                            Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
-                            Tinycast/Features/Clipboard/Model/ClipboardFilter.swift
+                           Tinycast/Features/Clipboard/Model/ClipboardFilter.swift \
+                           Tinycast/Features/Clipboard/Model/ColorValue.swift \
+                           Tinycast/Features/Clipboard/Model/ColorFormat.swift \
+                           Tinycast/Features/Clipboard/Model/ColorSpaces.swift
 run emoji-test             Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
                            Tinycast/Features/Emoji/Model/EmojiGridGeometry.swift \
                            Tinycast/Features/Emoji/Model/EmojiData.generated.swift
@@ -128,6 +130,9 @@ run hover-arming-test      Tinycast/Palette/HoverArming.swift \
                            Tinycast/Palette/PaletteMode.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardFilter.swift \
+                           Tinycast/Features/Clipboard/Model/ColorValue.swift \
+                           Tinycast/Features/Clipboard/Model/ColorFormat.swift \
+                           Tinycast/Features/Clipboard/Model/ColorSpaces.swift \
                            Tinycast/Features/Quicklinks/Model/Quicklink.swift \
                            Tinycast/Features/CustomCommands/Model/CustomCommand.swift
 run palette-escape-test    Tinycast/Palette/PaletteMode.swift \
@@ -296,6 +301,8 @@ run mcp-test               Tinycast/Features/Settings/AppSettingsKey.swift \
 run quick-action-test      Tinycast/Features/Settings/AppSettingsKey.swift \
                            Tinycast/Features/AI/Model/AIConnection.swift \
                            Tinycast/Features/AI/Model/AppleIntelligence.swift \
+                           Tinycast/Features/AI/Model/ChatGPTSubscription.swift \
+                           Tinycast/Features/AI/Model/InstalledAI.swift \
                            Tinycast/Features/QuickActions/Model/*.swift \
                            Tinycast/Features/QuickActions/Settings/QuickActionSettingsStore.swift
 run apple-intelligence-test Tinycast/Features/Settings/AppSettingsKey.swift \
@@ -320,6 +327,10 @@ run slow codex-turn-test   Tinycast/Platform/AppPaths.swift \
                            Tinycast/Features/AI/Service/CodexAppServerClient.swift \
                            Tinycast/Platform/ExecutableLocator.swift \
                            Tinycast/Features/AI/Service/CodexTurnRunner.swift
+run installed-ai-test     Tinycast/Features/AI/Model/*.swift \
+                          Tinycast/Features/AI/Service/AIProvider.swift \
+                          Tinycast/Platform/ExecutableLocator.swift \
+                          Tinycast/Features/AI/Service/InstalledCLIProvider.swift
 
 if [ "$emit_db" -eq 1 ]; then
     printf ']\n' >> "$DB"
@@ -343,7 +354,11 @@ fi
 
 # `sort -s` is stable, so the slow harnesses lead and everything else keeps its declaration order.
 JOBS="${TINYCAST_TEST_JOBS:-$(sysctl -n hw.ncpu)}"
-sort -s -k1,1n "$QUEUE" | cut -d' ' -f2- | xargs -P "$JOBS" -L1 "$SELF" --exec
+# Without this the suite reports "all passed" whenever dispatch itself dies and no harness ran.
+if ! sort -s -k1,1n "$QUEUE" | cut -d' ' -f2- | xargs -P "$JOBS" -L1 "$SELF" --exec; then
+    echo "harness dispatch failed; no result below can be trusted" >&2
+    exit 1
+fi
 
 # A compiler diagnostic is far longer than PIPE_BUF, so the workers log it and it is replayed here.
 while read -r _ name _; do

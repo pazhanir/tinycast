@@ -31,6 +31,7 @@ protocol ExtensionHostContext: AnyObject {
     func removeOAuthTokens(providerId: String)
     var aiSettings: AISettingsStore? { get }
     var chatGPTSubscription: ChatGPTSubscriptionManager? { get }
+    var installedAI: InstalledAIManager? { get }
 }
 
 /// A toast as the palette shows it.
@@ -534,8 +535,10 @@ final class ExtensionHostBridge: ExtensionHostAPI {
         }
 
         let subscription = ctx.chatGPTSubscription ?? ChatGPTSubscriptionManager()
+        let installedAI = ctx.installedAI ?? InstalledAIManager()
         let provider = try await MainActor.run {
-            try AIProviderFactory.make(settings: aiSettings, subscription: subscription)
+            try AIProviderFactory.make(
+                settings: aiSettings, subscription: subscription, installedAI: installedAI)
         }
 
         let registry = AIToolRegistry.shared

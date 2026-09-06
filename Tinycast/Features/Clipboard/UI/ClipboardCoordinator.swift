@@ -4,6 +4,9 @@ import AppKit
 @MainActor
 final class ClipboardCoordinator {
     private let clipboardStore: ClipboardStore
+    private let clipboardManager: ClipboardManager
+    private let settings: AppSettings
+    private let appIndex: AppIndex
     private let palette: PaletteState
     private let windowController: PaletteWindowController
     private let paletteCoordinator: PaletteCoordinator
@@ -12,16 +15,38 @@ final class ClipboardCoordinator {
 
     init(
         clipboardStore: ClipboardStore,
+        clipboardManager: ClipboardManager,
+        settings: AppSettings,
+        appIndex: AppIndex,
         palette: PaletteState,
         windowController: PaletteWindowController,
         paletteCoordinator: PaletteCoordinator,
         core: AppCore
     ) {
         self.clipboardStore = clipboardStore
+        self.clipboardManager = clipboardManager
+        self.settings = settings
+        self.appIndex = appIndex
         self.palette = palette
         self.windowController = windowController
         self.paletteCoordinator = paletteCoordinator
         self.core = core
+    }
+
+    /// Off means the poller stops, the database closes and nothing new is ever recorded.
+    func applyEnabled() {
+        appIndex.setCommandsVisible([.clipboardHistory], settings.clipboardEnabled)
+        guard settings.clipboardEnabled else {
+            clipboardManager.stop()
+            if palette.mode == .clipboard { palette.prepare(mode: .launcher) }
+            clipboardStore.close()
+            return
+        }
+        clipboardStore.open()
+        clipboardStore.maxAge = settings.clipboardRetention.maxAge
+        clipboardManager.start()
+        // Deferred off the launch path: the palette fills in behind the SQLite read and prune.
+        Task { clipboardStore.load() }
     }
 
     /// The setting names an age, the store enforces it; a shortened window culls straight away.
@@ -53,7 +78,14 @@ final class ClipboardCoordinator {
                 message: "Every entry goes, pinned ones included. This can't be undone.",
                 symbol: PaletteMode.clipboard.systemImage, confirmTitle: "Clear History")
         else { return }
+        clearHistory()
+    }
+
+    /// Reachable with the feature off, so what was kept before can still be erased afterwards.
+    func clearHistory() {
+        clipboardStore.open()
         clipboardStore.clearAll()
+        if !settings.clipboardEnabled { clipboardStore.close() }
     }
 
     func copyToClipboard(_ item: ClipboardItem) {
@@ -61,6 +93,12 @@ final class ClipboardCoordinator {
         if Paster.copy(item, store: clipboardStore) {
             selectClip(item)
         }
+    }
+
+    /// Unmarked, so a converted colour enters history itself — it is one you meant to keep.
+    func copyColor(_ color: ColorValue, as format: ColorFormat) {
+        paletteCoordinator.hidePalette(restoreFocus: false)
+        Paster.copyPlainText(format.string(for: color))
     }
 
     func revealClipboardImage(_ item: ClipboardItem) {
