@@ -161,7 +161,8 @@ struct RootPaletteView: View {
     }
 
     private var aiReasoningContent: PopoverMenuContent {
-        let selected = core.aiSettings.defaultModel?.effort
+        let current = core.aiSettings.defaultModel?.effort
+        let selected = (current == nil || current?.isEmpty == true || current == "none") ? "none" : current
         return PopoverMenuContent(
             items: core.aiChatCoordinator.reasoningEfforts.map { effort in
                 PopoverMenuItem(

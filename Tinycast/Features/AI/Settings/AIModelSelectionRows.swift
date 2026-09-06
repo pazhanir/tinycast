@@ -64,10 +64,13 @@ struct AIModelSelectionRows<ModelLabel: View, EffortLabel: View>: View {
 
     private var effortBinding: Binding<String> {
         Binding(
-            get: { selection?.effort ?? "" },
+            get: {
+                let current = selection?.effort ?? "none"
+                return (current.isEmpty || current == "none") ? "none" : current
+            },
             set: { effort in
                 guard let selection else { return }
-                select(selection.withEffort(effort))
+                select(selection.withEffort((effort.isEmpty || effort == "none") ? nil : effort))
             })
     }
 }

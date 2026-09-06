@@ -27,7 +27,7 @@ enum AIRequestBody {
         if input.webSearch, configuration.provider == .openRouter {
             body["plugins"] = [["id": "web"]]
         }
-        if let effort = configuration.effort {
+        if let effort = configuration.effort, effort != "none", !effort.isEmpty {
             if configuration.provider == .openRouter {
                 body["reasoning"] = ["effort": effort]
             } else {
@@ -61,7 +61,7 @@ enum AIRequestBody {
             "max_tokens": input.maxOutputTokens,
             "stream": true
         ]
-        if let effort = configuration.effort {
+        if let effort = configuration.effort, effort != "none", !effort.isEmpty {
             let budget: Int
             switch effort.lowercased() {
             case "low": budget = 1024

@@ -866,18 +866,7 @@ private struct AIConnectionEditorSheet: View {
                 } label: {
                     HStack(spacing: Theme.Spacing.md) {
                         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                            HStack(spacing: Theme.Spacing.xs) {
-                                Text(model.name)
-                                let hasThinking =
-                                    (model.reasoningOptions?.efforts.isEmpty == false)
-                                    || AIConnection.defaultReasoningOptions(
-                                        for: model.id, provider: connection.provider) != nil
-                                if hasThinking {
-                                    Image(systemName: "brain")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                            Text(model.name)
                             if model.name != model.id {
                                 Text(model.id)
                                     .font(.caption)
@@ -919,56 +908,14 @@ private struct AIConnectionEditorSheet: View {
     }
 
     private func selectedModelRow(_ model: String) -> some View {
-        LabeledContent {
-            HStack(spacing: Theme.Spacing.md) {
-                let options = connection.reasoningOptions(for: model)
-                let isThinkingEnabled = options != nil && options?.efforts.isEmpty == false
-                Button {
-                    toggleReasoning(for: model)
-                } label: {
-                    HStack(spacing: Theme.Spacing.xxs) {
-                        Image(systemName: "brain")
-                        Text("Thinking")
-                            .font(.caption)
-                    }
-                    .foregroundStyle(isThinkingEnabled ? Color.accentColor : Color.secondary.opacity(0.6))
-                    .padding(.horizontal, Theme.Spacing.xs)
-                    .padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.menu)
-                            .fill(isThinkingEnabled ? Color.accentColor.opacity(0.12) : Color.clear)
-                    )
-                }
-                .buttonStyle(.plain)
-                .help(
-                    isThinkingEnabled
-                        ? "Thinking enabled for this model. Click to disable."
-                        : "Click to enable thinking support for this model.")
-
-                Button {
-                    removeModel(model)
-                } label: {
-                    Image(systemName: "minus.circle").foregroundStyle(.red)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Remove \(model)")
+        LabeledContent(model) {
+            Button {
+                removeModel(model)
+            } label: {
+                Image(systemName: "minus.circle").foregroundStyle(.red)
             }
-        } label: {
-            Text(model)
-        }
-    }
-
-    private func toggleReasoning(for model: String) {
-        if connection.reasoningOptions == nil { connection.reasoningOptions = [:] }
-        let current = connection.reasoningOptions(for: model)
-        if current != nil && current?.efforts.isEmpty == false {
-            connection.reasoningOptions?[model] = AIConnection.ReasoningOptions(
-                efforts: [], defaultEffort: nil)
-        } else {
-            let defaults =
-                AIConnection.defaultReasoningOptions(for: model, provider: connection.provider)
-                ?? AIConnection.ReasoningOptions(efforts: ["low", "medium", "high"], defaultEffort: "medium")
-            connection.reasoningOptions?[model] = defaults
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(model)")
         }
     }
 
@@ -1089,12 +1036,9 @@ private struct AIConnectionEditorSheet: View {
         if acceptsImages == true, !connection.visionModels.contains(model) {
             connection.visionModels.append(model)
         }
-        let options =
-            reasoningOptions
-            ?? AIConnection.defaultReasoningOptions(for: model, provider: connection.provider)
-        if let options, !options.efforts.isEmpty {
+        if let reasoningOptions, !reasoningOptions.efforts.isEmpty {
             if connection.reasoningOptions == nil { connection.reasoningOptions = [:] }
-            connection.reasoningOptions?[model] = options
+            connection.reasoningOptions?[model] = reasoningOptions
         }
         modelQuery = ""
     }

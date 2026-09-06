@@ -242,7 +242,7 @@ final class AISettingsStore {
             if let model = connection.models.first {
                 return .api(
                     connection: connection.id, model: model,
-                    effort: connection.reasoningOptions?[model]?.resolvedEffort(nil))
+                    effort: nil)
             }
         }
         return nil

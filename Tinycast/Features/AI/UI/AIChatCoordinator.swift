@@ -381,6 +381,7 @@ final class AIChatCoordinator {
 
     var selectedReasoningTitle: String {
         guard let selected = core.aiSettings.defaultModel?.effort,
+            selected != "none", !selected.isEmpty,
             let effort = reasoningEfforts.first(where: { $0.id == selected })
         else { return "Reasoning" }
         return effort.title
@@ -388,7 +389,8 @@ final class AIChatCoordinator {
 
     func selectReasoningEffort(_ effort: ChatGPTSubscription.Effort) {
         guard let selection = core.aiSettings.defaultModel else { return }
-        core.aiSettings.select(selection.withEffort(effort.id))
+        let chosen = (effort.id == "none" || effort.id.isEmpty) ? nil : effort.id
+        core.aiSettings.select(selection.withEffort(chosen))
     }
 
     @discardableResult
@@ -525,9 +527,8 @@ struct AIModelOption: Identifiable {
         case .claude, .openCode:
             effort = installedAI.models(for: selection.source)
                 .first { $0.id == model }?.resolvedEffort(nil)
-        case .api(let connection):
-            effort = settings.connection(id: connection)?
-                .reasoningOptions(for: model)?.resolvedEffort(nil)
+        case .api:
+            effort = nil
         }
         return selection.withEffort(effort)
     }
@@ -543,12 +544,35 @@ struct AIModelOption: Identifiable {
         case .appleIntelligence:
             return []
         case .codex:
-            return subscription.models.first { $0.id == model }?.efforts ?? []
+            var list = subscription.models.first { $0.id == model }?.efforts ?? []
+            if !list.isEmpty && !list.contains(where: { $0.id == "none" }) {
+                list.insert(ChatGPTSubscription.Effort(id: "none", detail: nil), at: 0)
+            }
+            return list
         case .claude, .openCode:
-            return installedAI.models(for: selection.source).first { $0.id == model }?.efforts ?? []
+            var list =
+                installedAI.models(for: selection.source).first { $0.id == model }?.efforts ?? []
+            if !list.isEmpty && !list.contains(where: { $0.id == "none" }) {
+                list.insert(ChatGPTSubscription.Effort(id: "none", detail: nil), at: 0)
+            }
+            return list
         case .api(let connection):
-            return settings.connection(id: connection)?.reasoningOptions(for: model)?
-                .efforts.map { ChatGPTSubscription.Effort(id: $0, detail: nil) } ?? []
+            let standardEfforts = [
+                ChatGPTSubscription.Effort(id: "none", detail: nil),
+                ChatGPTSubscription.Effort(id: "low", detail: nil),
+                ChatGPTSubscription.Effort(id: "medium", detail: nil),
+                ChatGPTSubscription.Effort(id: "high", detail: nil)
+            ]
+            if let custom = settings.connection(id: connection)?.reasoningOptions?[model]?.efforts,
+                !custom.isEmpty
+            {
+                var list = custom.map { ChatGPTSubscription.Effort(id: $0, detail: nil) }
+                if !list.contains(where: { $0.id == "none" }) {
+                    list.insert(ChatGPTSubscription.Effort(id: "none", detail: nil), at: 0)
+                }
+                return list
+            }
+            return standardEfforts
         }
     }
 

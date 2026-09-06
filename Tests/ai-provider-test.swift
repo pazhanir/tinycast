@@ -211,6 +211,24 @@ struct AIProviderTests {
             openAIWithEffort["reasoning_effort"] as? String == "high",
             "OpenAI receives reasoning_effort")
 
+        let openAIWithNone = AIRequestBody.make(
+            AIRequest(messages: [AIMessage(role: .user, text: "hi")]),
+            configuration: AIHTTPConfiguration(
+                provider: .openAI, baseURL: URL(string: "https://api.openai.com/v1")!,
+                model: "o3-mini", effort: "none"))
+        expect(
+            openAIWithNone["reasoning_effort"] == nil,
+            "OpenAI with effort none omits reasoning_effort")
+
+        let anthropicWithNone = AIRequestBody.make(
+            AIRequest(messages: [AIMessage(role: .user, text: "hi")]),
+            configuration: AIHTTPConfiguration(
+                provider: .anthropic, baseURL: URL(string: "https://api.anthropic.com")!,
+                model: "claude-3-7-sonnet", effort: "none"))
+        expect(
+            anthropicWithNone["thinking"] == nil,
+            "Anthropic with effort none omits thinking")
+
         let anthropicWithEffort = AIRequestBody.make(
             AIRequest(messages: [AIMessage(role: .user, text: "hi")]),
             configuration: AIHTTPConfiguration(
