@@ -171,6 +171,7 @@ const process = {
   uptime: () => Date.now() / 1000,
   memoryUsage: () => ({ rss: 0, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 }),
   emitWarning: (warning) => console.warn(String(warning)),
+  kill: (pid, signal) => true,
   on(event, listener) {
     if (!processListeners.has(event)) processListeners.set(event, new Set());
     processListeners.get(event).add(listener);
@@ -705,6 +706,7 @@ class BufferedChildProcess extends EventEmitter {
     this.stderr = new PassThrough();
     this._input = [];
     this._started = false;
+    this._unreferenced = false;
 
     const self = this;
     this.stdin = {
@@ -735,6 +737,17 @@ class BufferedChildProcess extends EventEmitter {
     if (this._started) return;
     this._started = true;
     const input = this._input.length ? bytesToBase64(Buffer.concat(this._input)) : null;
+    // A detached child outlives the caller (`caffeinate -t 300 &`) only when unreferenced or
+    // explicitly configured with ignored stdio. Detached alone (e.g. for process groups in execa
+    // or port-manager) still pipes stdout/stderr and awaits completion.
+    const isDetached = Boolean(
+      options.detached &&
+        (this._unreferenced ||
+          options.stdio === "ignore" ||
+          (Array.isArray(options.stdio) &&
+            options.stdio[1] === "ignore" &&
+            options.stdio[2] === "ignore")),
+    );
     hostCall("proc", "run", [
       {
         shell: !!options.shell,
@@ -744,8 +757,7 @@ class BufferedChildProcess extends EventEmitter {
         env: options.env,
         timeout: options.timeout,
         input,
-        // A detached child outlives the caller (`caffeinate -t 300 &`); don't wait for it to exit.
-        detached: !!options.detached,
+        detached: isDetached,
       },
     ]).then(
       (raw) => {
@@ -778,9 +790,11 @@ class BufferedChildProcess extends EventEmitter {
   // Node uses these to detach a child from the event loop. Nothing here keeps the runtime alive, so
   // they only need to exist and chain — `spawn(...).unref()` is a common one-liner.
   unref() {
+    this._unreferenced = true;
     return this;
   }
   ref() {
+    this._unreferenced = false;
     return this;
   }
 }
