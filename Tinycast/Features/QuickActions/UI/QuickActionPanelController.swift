@@ -19,7 +19,8 @@ final class QuickActionPanelController: NSObject, NSWindowDelegate {
         languages: [Locale.Language],
         onRetranslate: @escaping (Locale.Language) -> Void,
         onDownloaded: @escaping () -> Void,
-        onReplace: @escaping (String) -> Void
+        onReplace: @escaping (String) -> Void,
+        onContinueInChat: (() -> Void)? = nil
     ) {
         dismiss()
         self.state = state
@@ -36,6 +37,10 @@ final class QuickActionPanelController: NSObject, NSWindowDelegate {
                 onCancel: { [weak self] in self?.dismiss() },
                 onRetranslate: { [weak self] in self?.onRetranslate?($0) },
                 onDownloaded: { [weak self] in self?.onDownloaded?() },
+                onContinueInChat: { [weak self] in
+                    self?.dismiss()
+                    onContinueInChat?()
+                },
                 onHeight: { [weak self] in self?.resize(toHeight: $0) }))
         // The controller owns the frame; without this the top edge drifts as the reply grows.
         hosting.sizingOptions = []

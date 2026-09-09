@@ -13,16 +13,18 @@ final class QuickActionPanelState {
         case needsLanguageDownload
     }
 
-    let action: QuickAction
+    let target: QuickActionTarget
     let original: String
     private(set) var output = ""
     private(set) var phase: Phase = .running
     var targetLanguage: Locale.Language
 
+    var action: QuickAction? { target.builtInAction }
+
     @ObservationIgnored private var cachedDiff: [TextDiffEngine.Chunk]?
 
     var diff: [TextDiffEngine.Chunk] {
-        guard action.showsDiff, phase == .finished else { return [] }
+        guard target.showsDiff, phase == .finished else { return [] }
         if let cachedDiff { return cachedDiff }
         let chunks = TextDiffEngine.diff(original: original, modified: output)
         cachedDiff = chunks
@@ -33,10 +35,18 @@ final class QuickActionPanelState {
 
     var canReplace: Bool { phase == .finished && !output.isEmpty }
 
-    init(action: QuickAction, original: String, targetLanguage: Locale.Language) {
-        self.action = action
+    init(target: QuickActionTarget, original: String, targetLanguage: Locale.Language) {
+        self.target = target
         self.original = original
         self.targetLanguage = targetLanguage
+    }
+
+    convenience init(action: QuickAction, original: String, targetLanguage: Locale.Language) {
+        self.init(target: .builtIn(action), original: original, targetLanguage: targetLanguage)
+    }
+
+    convenience init(customAction: CustomQuickAction, original: String, targetLanguage: Locale.Language) {
+        self.init(target: .custom(customAction), original: original, targetLanguage: targetLanguage)
     }
 
     func append(_ delta: String) {

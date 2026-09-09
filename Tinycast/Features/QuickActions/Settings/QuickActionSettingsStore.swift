@@ -1,19 +1,25 @@
 import Foundation
 import Observation
 
-/// Apart from `AISettingsStore`: a peer of chat, with its own switch, route and settings pane.
+/// Holds what the Quick Actions pane presents, and persists it to UserDefaults.
 @MainActor
 @Observable
 final class QuickActionSettingsStore {
-    private let defaults: UserDefaults
+    private static let customActionsKey = "tinycast.quickactions.custom"
 
     var settings: QuickActionSettings {
         didSet { persistSettings() }
     }
-    /// A grammar fix fires far oftener than a chat turn, so billing it per press is no default.
-    private(set) var model: AIModelSelection? {
+
+    var model: AIModelSelection? {
         didSet { persistModel() }
     }
+
+    var customActions: [CustomQuickAction] {
+        didSet { persistCustomActions() }
+    }
+
+    private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -29,10 +35,44 @@ final class QuickActionSettingsStore {
         settings = loaded
         model = Self.decodeModel(
             defaults.data(forKey: AppSettingsKey.quickActionModel.rawValue))
+
+        if let data = defaults.data(forKey: Self.customActionsKey),
+           let actions = try? JSONDecoder().decode([CustomQuickAction].self, from: data) {
+            customActions = actions
+        } else {
+            customActions = CustomQuickAction.sampleActions
+        }
     }
 
     func select(_ selection: AIModelSelection?) {
         model = selection
+    }
+
+    func customAction(id: UUID) -> CustomQuickAction? {
+        customActions.first(where: { $0.id == id })
+    }
+
+    func addCustomAction(_ action: CustomQuickAction) {
+        customActions.append(action)
+    }
+
+    func updateCustomAction(_ action: CustomQuickAction) {
+        if let idx = customActions.firstIndex(where: { $0.id == action.id }) {
+            customActions[idx] = action
+        }
+    }
+
+    func duplicateCustomAction(id: UUID) {
+        guard let existing = customAction(id: id) else { return }
+        var copy = existing
+        copy.id = UUID()
+        copy.name = "\(existing.name) Copy"
+        customActions.append(copy)
+    }
+
+    func removeCustomAction(id: UUID) {
+        customActions.removeAll(where: { $0.id == id })
+        defaults.removeObject(forKey: "hotkey.quickAction." + id.uuidString.lowercased())
     }
 
     /// Nothing chosen takes the route that needs no account, the way chat's own default resolves.
@@ -70,11 +110,22 @@ final class QuickActionSettingsStore {
 
     private func persistSettings() {
         defaults.set(
-            settings.storedPreviewChoices, forKey: AppSettingsKey.quickActionPreviews.rawValue)
-        defaults.set(settings.targetLanguage, forKey: AppSettingsKey.quickActionLanguage.rawValue)
+            settings.storedPreviewChoices,
+            forKey: AppSettingsKey.quickActionPreviews.rawValue)
+        defaults.set(
+            settings.targetLanguage,
+            forKey: AppSettingsKey.quickActionLanguage.rawValue)
         defaults.set(
             settings.storedInstructionOverrides,
             forKey: AppSettingsKey.quickActionInstructions.rawValue)
+    }
+
+    private func persistCustomActions() {
+        guard let data = try? JSONEncoder().encode(customActions) else {
+            defaults.removeObject(forKey: Self.customActionsKey)
+            return
+        }
+        defaults.set(data, forKey: Self.customActionsKey)
     }
 
     private func persistModel() {

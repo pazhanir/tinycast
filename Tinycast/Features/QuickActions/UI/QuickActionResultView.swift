@@ -9,6 +9,7 @@ struct QuickActionResultView: View {
     let onCancel: () -> Void
     let onRetranslate: (Locale.Language) -> Void
     let onDownloaded: () -> Void
+    var onContinueInChat: (() -> Void)? = nil
     let onHeight: (CGFloat) -> Void
 
     @State private var contentHeight: CGFloat = 0
@@ -98,9 +99,9 @@ struct QuickActionResultView: View {
         HStack(spacing: Theme.Spacing.md) {
             // Only the title run drags: the handle is an overlay, and would eat the menu's clicks.
             HStack(spacing: Theme.Spacing.sm) {
-                SymbolImage(name: state.action.symbol, size: Theme.Size.quickActionHeaderIcon)
+                SymbolImage(name: state.target.symbol, size: Theme.Size.quickActionHeaderIcon)
                     .foregroundStyle(Theme.Colors.textSecondary)
-                Text(state.action.title)
+                Text(state.target.title)
                     .font(Theme.Typography.panelTitle)
                 Spacer(minLength: Theme.Spacing.md)
             }
@@ -138,7 +139,7 @@ struct QuickActionResultView: View {
         if !chunks.isEmpty {
             // One `Text` per chunk would break the wrap, so the runs are styled inside one string.
             prose(Text(attributed(chunks)))
-        } else if state.action == .summarize {
+        } else if state.action == .summarize || state.target.builtInAction == nil {
             MarkdownView(blocks: MarkdownBlock.parse(state.output))
         } else {
             prose(Text(state.output))
@@ -196,6 +197,14 @@ struct QuickActionResultView: View {
 
     private var footer: some View {
         HStack(spacing: Theme.Spacing.md) {
+            if let onContinueInChat {
+                Button {
+                    onContinueInChat()
+                } label: {
+                    Label("Ask in Chat", systemImage: "bubble.left.and.bubble.right")
+                }
+                .disabled(!state.canReplace)
+            }
             Spacer(minLength: Theme.Spacing.md)
             Button("Dismiss", action: onCancel)
             Button("Copy", action: onCopy).disabled(!state.canReplace)

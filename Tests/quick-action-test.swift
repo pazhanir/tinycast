@@ -25,6 +25,7 @@ struct QuickActionTests {
         diffsStayBoundedOnLongText()
         settingsPersistAndRepairTheirRoute()
         refusalsNameTheirOwnCause()
+        customActionsPersistAndSupportOutputModes()
 
         print("\(passes) passed, \(failures) failed")
         if failures > 0 { exit(1) }
@@ -302,4 +303,57 @@ struct QuickActionTests {
             chunks.first == .deleted(long),
             "the degraded diff still names the original whole")
     }
+
+    static func customActionsPersistAndSupportOutputModes() {
+        let suite = "QuickActionTests.customActions"
+        let defaults = isolatedDefaults(suite)
+        defer { discardSuite(suite, defaults) }
+
+        let store = QuickActionSettingsStore(defaults: defaults)
+        expect(!store.customActions.isEmpty, "defaults provide sample custom actions")
+
+        // Create action with openInAIChat
+        let chatAction = CustomQuickAction(
+            name: "Ask in Chat",
+            descriptionText: "Send prompt to AI Chat",
+            prompt: "Summarize: {selection}",
+            symbol: "bubble.left",
+            outputMode: .openInAIChat,
+            model: nil
+        )
+        store.addCustomAction(chatAction)
+        expect(store.customActions.contains(where: { $0.id == chatAction.id }), "custom action was added")
+        expect(store.customAction(id: chatAction.id)?.outputMode == .openInAIChat, "output mode is openInAIChat")
+
+        // Duplicate action
+        store.duplicateCustomAction(id: chatAction.id)
+        let dup = store.customActions.first(where: { $0.name == "Ask in Chat Copy" })
+        expect(dup != nil, "action can be duplicated")
+        expect(dup?.outputMode == .openInAIChat, "duplicate retains outputMode")
+
+        // Backward compatibility decoding: replacesDirectly true -> replaceSelection
+        let legacyJSON = """
+        {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "name": "Legacy Replace",
+            "prompt": "Fix {selection}",
+            "replacesDirectly": true
+        }
+        """.data(using: .utf8)!
+        let decodedLegacy = try? JSONDecoder().decode(CustomQuickAction.self, from: legacyJSON)
+        expect(decodedLegacy != nil, "decodes legacy format")
+        expect(decodedLegacy?.outputMode == .replaceSelection, "legacy replacesDirectly maps to replaceSelection")
+
+        // Persistence test
+        let reopened = QuickActionSettingsStore(defaults: defaults)
+        expect(reopened.customActions.contains(where: { $0.id == chatAction.id }), "custom actions survive relaunch")
+        let loadedChat = reopened.customAction(id: chatAction.id)
+        expect(loadedChat?.outputMode == .openInAIChat, "reopened custom action retains openInAIChat")
+        expect(loadedChat?.descriptionText == "Send prompt to AI Chat", "reopened custom action retains description")
+
+        // Removal
+        store.removeCustomAction(id: chatAction.id)
+        expect(store.customAction(id: chatAction.id) == nil, "custom action can be removed")
+    }
+
 }

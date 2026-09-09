@@ -267,6 +267,10 @@ final class AppCore {
             hotKeys.onOpenQuicklink = { [weak self] id in
                 self?.quicklinkCoordinator.openQuicklink(id: id)
             }
+            hotKeys.onRunQuickAction = { [weak self] id in
+                guard let self, let action = quickActionSettings.customAction(id: id) else { return }
+                quickActionCoordinator.run(action)
+            }
             hotKeys.onRunExtensionCommand = { [weak self] entryID in
                 self?.extensionCoordinator.runExtensionCommand(entryID: entryID)
             }
@@ -276,6 +280,9 @@ final class AppCore {
             hotKeys.displayName = { [weak self] action in self?.hotKeyDisplayName(for: action) }
             hotKeys.allowsAction = { [weak self] action in
                 guard let self, visibility.allowsHotKey(action) else { return false }
+                if case .quickAction = action {
+                    return settings.quickActionsEnabled
+                }
                 // A disabled feature drops its commands from the launcher; their shortcuts go too.
                 guard case .command(let id) = action else { return true }
                 return appIndex.isCommandEnabled(id)
@@ -290,7 +297,8 @@ final class AppCore {
             hotKeys.start(
                 customCommandIDs: Set(customCommands.commands.map(\.id)),
                 quicklinkIDs: Set(quicklinks.quicklinks.map(\.id)),
-                windowLayoutIDs: Set(windowLayouts.layouts.map(\.id)))
+                windowLayoutIDs: Set(windowLayouts.layouts.map(\.id)),
+                quickActionIDs: Set(quickActionSettings.customActions.map(\.id)))
             // Keeps running while Carbon pauses: the recorder needs its rewritten flags.
             hyperKeyTap.start(settings: settings)
 
@@ -350,6 +358,8 @@ final class AppCore {
             return customCommands.command(id: id)?.name
         case .quicklink(let id):
             return quicklinks.quicklink(id: id)?.name
+        case .quickAction(let id):
+            return quickActionSettings.customAction(id: id)?.name
         case .windowLayout(let id):
             return windowLayouts.layout(id: id)?.name
         case .extensionCommand(let entryID):
@@ -402,9 +412,13 @@ final class AppCore {
 
     /// Permissive guardrails: the text transformed is the reader's own, which `.default` refuses.
     func quickActionProvider() throws -> any AIProvider {
+        try quickActionProvider(for: nil)
+    }
+
+    func quickActionProvider(for selectionOverride: AIModelSelection?) throws -> any AIProvider {
         quickActionSettings.repairModel(
             against: aiSettings.connections, fallback: aiSettings.defaultModel)
-        guard let selection = quickActionSettings.model ?? aiSettings.defaultModel else {
+        guard let selection = selectionOverride ?? quickActionSettings.model ?? aiSettings.defaultModel else {
             throw AIProviderError.unavailable("Choose a model in Settings \u{2192} Quick Actions.")
         }
         return try AIProviderFactory.make(

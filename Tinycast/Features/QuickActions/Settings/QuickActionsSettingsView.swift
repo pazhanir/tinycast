@@ -12,6 +12,8 @@ struct QuickActionsSettingsView: View {
     /// Polled like the Permissions pane: the grant lands in System Settings, which sends nothing.
     @State private var isTrusted = Permissions.isAccessibilityTrusted()
     @State private var editingAction: QuickAction?
+    @State private var editingCustomAction: CustomQuickAction?
+    @State private var isCreatingCustomAction = false
     private let refreshTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -42,6 +44,7 @@ struct QuickActionsSettingsView: View {
 
             Group {
                 actionsSection
+                customActionsSection
                 modelSection
                 languageSection
             }
@@ -56,6 +59,16 @@ struct QuickActionsSettingsView: View {
                 instructionOverride: store.settings.instructionOverride(for: action)
             ) { instructionOverride in
                 store.settings.setInstructionOverride(instructionOverride, for: action)
+            }
+        }
+        .sheet(item: $editingCustomAction) { action in
+            CustomQuickActionEditorSheet(action: action, modelChoices: modelChoices) { updated in
+                store.updateCustomAction(updated)
+            }
+        }
+        .sheet(isPresented: $isCreatingCustomAction) {
+            CustomQuickActionEditorSheet(action: nil, modelChoices: modelChoices) { created in
+                store.addCustomAction(created)
             }
         }
         .onAppear {
@@ -120,6 +133,79 @@ struct QuickActionsSettingsView: View {
             )
             .font(.caption)
             .foregroundStyle(.secondary)
+        }
+    }
+
+    private var customActionsSection: some View {
+        Section {
+            if store.customActions.isEmpty {
+                Text("No custom quick actions yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(store.customActions) { action in
+                    SettingsRow(
+                        title: action.name,
+                        subtitle: action.descriptionText.isEmpty ? (action.prompt.components(separatedBy: .newlines).first ?? "") : action.descriptionText
+                    ) {
+                        Image(systemName: action.symbol)
+                            .frame(width: Theme.Size.settingsRowIcon)
+                    } trailing: {
+                        Button {
+                            editingCustomAction = action
+                        } label: {
+                            SymbolImage(name: "pencil", size: Theme.Size.quickActionHeaderIcon)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Edit \(action.name)")
+
+                        ShortcutRecorder(action: .quickAction(id: action.id), isQuiet: true)
+
+                        Button(role: .destructive) {
+                            store.removeCustomAction(id: action.id)
+                        } label: {
+                            SymbolImage(name: "trash", size: Theme.Size.quickActionHeaderIcon)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete \(action.name)")
+
+                        Toggle("", isOn: Binding(
+                            get: { action.isEnabled },
+                            set: { enabled in
+                                var updated = action
+                                updated.isEnabled = enabled
+                                store.updateCustomAction(updated)
+                            }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.checkbox)
+                        .help(action.isEnabled ? "Enabled" : "Disabled")
+                    }
+                }
+            }
+
+            LabeledContent {
+                Button("Create Quick Action…") {
+                    isCreatingCustomAction = true
+                }
+            } label: {
+                SettingsRowTitle(.quickActionsActions, "New Custom Action")
+                Text("Create an AI command powered by dynamic placeholders and output routing.")
+            }
+        } header: {
+            HStack {
+                Text("Custom Quick Actions (AI Commands)")
+                Spacer()
+                Button {
+                    isCreatingCustomAction = true
+                } label: {
+                    Label("Add", systemImage: "plus")
+                }
+                .buttonStyle(.borderless)
+            }
+        } footer: {
+            Text("Create custom AI commands with Raycast Dynamic Placeholders like {selection}, {clipboard}, {argument name=\"…\"}, {date}, and {calculator …}. Output directly to panel, AI Chat, or document.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -291,6 +377,214 @@ struct QuickActionsSettingsView: View {
             }
             .padding(Theme.Spacing.xxl)
             .frame(width: Theme.Size.editorSheetWidth)
+        }
+    }
+
+    private struct CustomQuickActionEditorSheet: View {
+        @Environment(\.dismiss) private var dismiss
+        @State private var name: String
+        @State private var descriptionText: String
+        @State private var prompt: String
+        @State private var symbol: String
+        @State private var showingIconPicker = false
+        @State private var outputMode: CustomQuickAction.OutputMode
+        @State private var selectedModel: AIModelSelection?
+
+        private static let iconSymbols = [
+            "wand.and.sparkles", "sparkles", "brain", "text.bubble", "bubble.left.and.bubble.right",
+            "character.book.closed", "doc.text", "quote.bubble", "text.quote", "text.alignleft",
+            "list.bullet", "checkmark.circle", "arrow.triangle.2.circlepath", "magnifyingglass", "bolt",
+            "pencil", "highlighter", "scissors", "clipboard", "doc.on.clipboard",
+            "link", "globe", "safari", "terminal", "command",
+            "gear", "cpu", "network", "lock", "key",
+            "bell", "flag", "star", "bookmark", "tray",
+            "paperplane", "cart", "gift", "heart", "folder",
+            "waveform", "mic", "photo", "camera", "chart.bar",
+            "tablecells", "arrow.up.right", "clock", "person", "creditcard"
+        ]
+
+        let originalAction: CustomQuickAction?
+        let modelChoices: [AIModelOption]
+        let onSave: (CustomQuickAction) -> Void
+
+        init(action: CustomQuickAction?, modelChoices: [AIModelOption], onSave: @escaping (CustomQuickAction) -> Void) {
+            self.originalAction = action
+            self.modelChoices = modelChoices
+            _name = State(initialValue: action?.name ?? "")
+            _descriptionText = State(initialValue: action?.descriptionText ?? "")
+            _prompt = State(initialValue: action?.prompt ?? "")
+            _symbol = State(initialValue: action?.symbol ?? "wand.and.sparkles")
+            _outputMode = State(initialValue: action?.outputMode ?? .previewInPanel)
+            _selectedModel = State(initialValue: action?.model)
+            self.onSave = onSave
+        }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                Text(originalAction == nil ? "New Quick Action" : "Edit Quick Action")
+                    .font(.title2.weight(.bold))
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text("Name").font(.subheadline.weight(.medium))
+                    TextField("e.g. Explain Code", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text("Description (Optional)").font(.subheadline.weight(.medium))
+                    TextField("e.g. Explains code and suggests improvements", text: $descriptionText)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                HStack(spacing: Theme.Spacing.md) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        Text("Icon").font(.subheadline.weight(.medium))
+                        Button {
+                            showingIconPicker = true
+                        } label: {
+                            HStack(spacing: Theme.Spacing.sm) {
+                                Image(systemName: symbol.isEmpty ? "wand.and.sparkles" : symbol)
+                                    .frame(width: 16, height: 16)
+                                Text(symbol.isEmpty ? "wand.and.sparkles" : symbol)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                                    .fill(Theme.Colors.cardFill)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                                    .strokeBorder(Theme.Colors.cardStroke, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .popover(isPresented: $showingIconPicker, arrowEdge: .bottom) {
+                            SymbolPicker(
+                                selection: Binding(
+                                    get: { symbol.isEmpty ? nil : symbol },
+                                    set: { symbol = $0 ?? "wand.and.sparkles" }
+                                ),
+                                fallback: "wand.and.sparkles",
+                                symbols: Self.iconSymbols
+                            ) {
+                                showingIconPicker = false
+                            }
+                            .padding(Theme.Spacing.md)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        Text("Output Mode").font(.subheadline.weight(.medium))
+                        Picker("", selection: $outputMode) {
+                            ForEach(CustomQuickAction.OutputMode.allCases, id: \.self) { mode in
+                                Label(mode.title, systemImage: mode.symbol).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                    }
+                }
+
+                if outputMode == .openInAIChat {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .foregroundStyle(.secondary)
+                        Text("Sends prompt to AI Chat using your active conversation and model settings.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 2)
+                } else {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        Text("Model Override (Optional)").font(.subheadline.weight(.medium))
+                        Picker("", selection: $selectedModel) {
+                            Text("Default Quick Action Model").tag(Optional<AIModelSelection>.none)
+                            ForEach(modelChoices, id: \.selection) { option in
+                                Text(option.title).tag(Optional(option.selection))
+                            }
+                        }
+                        .labelsHidden()
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text("Prompt Template").font(.subheadline.weight(.medium))
+                    Text("Use dynamic placeholders to insert context into the prompt.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    // Helper chips to insert placeholders
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            insertChip("{selection}", label: "Selection")
+                            insertChip("{clipboard}", label: "Clipboard")
+                            insertChip("{argument name=\"Topic\"}", label: "Argument")
+                            insertChip("{date}", label: "Date")
+                            insertChip("{time}", label: "Time")
+                            insertChip("{calculator expression=\"2 + 2\"}", label: "Calculator")
+                            insertChip("{uuid}", label: "UUID")
+                        }
+                    }
+
+                    TextEditor(text: $prompt)
+                        .font(.body.monospaced())
+                        .scrollContentBackground(.hidden)
+                        .padding(Theme.Spacing.sm)
+                        .frame(height: Theme.Size.editorTextHeight * 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                                .fill(Theme.Colors.cardFill)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                                .strokeBorder(Theme.Colors.cardStroke, lineWidth: 1)
+                        )
+                }
+
+                HStack {
+                    Spacer()
+                    Button("Cancel") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                    Button("Save") {
+                        let action = CustomQuickAction(
+                            id: originalAction?.id ?? UUID(),
+                            name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Custom Action" : name,
+                            descriptionText: descriptionText.trimmingCharacters(in: .whitespacesAndNewlines),
+                            prompt: prompt,
+                            symbol: symbol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "wand.and.sparkles" : symbol,
+                            outputMode: outputMode,
+                            model: (outputMode == .openInAIChat) ? nil : selectedModel,
+                            isEnabled: originalAction?.isEnabled ?? true
+                        )
+                        onSave(action)
+                        dismiss()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || prompt.isEmpty)
+                }
+            }
+            .padding(Theme.Spacing.xxl)
+            .frame(width: Theme.Size.editorSheetWidth + 60)
+        }
+
+        private func insertChip(_ token: String, label: String) -> some View {
+            Button {
+                prompt.append(token)
+            } label: {
+                Text(label)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.Colors.cardFill)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.Colors.cardStroke, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
         }
     }
 }

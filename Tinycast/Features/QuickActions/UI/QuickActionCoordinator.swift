@@ -78,6 +78,13 @@ final class QuickActionCoordinator {
         start { [weak self] in await self?.begin(action, target: target) }
     }
 
+    func run(_ customAction: CustomQuickAction) {
+        guard settings.quickActionsEnabled, running == nil else { return }
+        let target = paletteCoordinator.targetApp
+        if paletteCoordinator.isVisible { paletteCoordinator.hidePalette(restoreFocus: false) }
+        start { [weak self] in await self?.begin(customAction, target: target) }
+    }
+
     func cancel() {
         generation += 1
         running?.cancel()
@@ -115,6 +122,70 @@ final class QuickActionCoordinator {
         await perform(state, target: target, previewing: previews)
     }
 
+    private func begin(_ customAction: CustomQuickAction, target: NSRunningApplication?) async {
+        let selection: String
+        let needsSelection = SnippetTemplateEngine.usesSelection(customAction.prompt)
+        if needsSelection {
+            do {
+                selection = try await QuickActionRunner.selection(in: target, using: injector)
+            } catch let failure as QuickActionFailure {
+                reportRefusal(failure)
+                return
+            } catch {
+                core.showMessage(error.localizedDescription, tone: .danger)
+                return
+            }
+        } else {
+            if let target, let read = try? await QuickActionRunner.selection(in: target, using: injector) {
+                selection = read
+            } else {
+                selection = ""
+            }
+        }
+
+        if customAction.outputMode == .openInAIChat {
+            await performOpenInAIChat(customAction, selection: selection)
+            return
+        }
+
+        let state = QuickActionPanelState(
+            customAction: customAction, original: selection, targetLanguage: targetLanguage)
+        let previews = (customAction.outputMode == .previewInPanel)
+        if previews { present(state, target: target) }
+        await performCustom(state, customAction: customAction, target: target, previewing: previews)
+    }
+
+    private func performOpenInAIChat(_ customAction: CustomQuickAction, selection: String) async {
+        let declared = SnippetTemplateEngine.declaredArguments(in: customAction.prompt)
+        var userArguments: [String: String] = [:]
+        if !declared.isEmpty {
+            guard let collected = SnippetArgumentsPrompt.run(
+                snippetName: customAction.name,
+                arguments: declared
+            ) else {
+                return
+            }
+            userArguments = collected
+        }
+
+        let clipboardHistory = (NSPasteboard.general.string(forType: .string).map { [$0] }) ?? []
+        let context = SnippetTemplateEngine.ExpansionContext(
+            clipboardHistory: clipboardHistory,
+            selection: selection,
+            now: Date(),
+            calendar: .current,
+            locale: .current,
+            timeZone: .current
+        )
+        let expansion = SnippetTemplateEngine.expand(
+            text: customAction.prompt,
+            context: context,
+            userArguments: userArguments
+        )
+
+        core.aiChatCoordinator.ask(expansion.text)
+    }
+
     /// A missing permission cannot be fixed from a pill that fades, so it earns a dialog instead.
     private func reportRefusal(_ failure: QuickActionFailure) {
         guard failure.opensAccessibilitySettings else {
@@ -139,12 +210,13 @@ final class QuickActionCoordinator {
     private func perform(
         _ state: QuickActionPanelState, target: NSRunningApplication?, previewing: Bool
     ) async {
+        guard let action = state.action else { return }
         do {
-            let text = try await produce(state, previewing: previewing)
+            let text = try await produce(state, action: action, previewing: previewing)
             guard !Task.isCancelled else { return }
             state.finish(text)
             if previewing { return }
-            deliver(text, to: target, action: state.action)
+            deliver(text, to: target, title: state.target.title)
         } catch is CancellationError {
             return
         } catch let error as TextTranslator.Failure where error.needsDownload {
@@ -156,26 +228,109 @@ final class QuickActionCoordinator {
         }
     }
 
+    private func performCustom(
+        _ state: QuickActionPanelState, customAction: CustomQuickAction,
+        target: NSRunningApplication?, previewing: Bool
+    ) async {
+        do {
+            if !previewing {
+                core.showProgress(state.target.progressTitle)
+            }
+            defer {
+                if !previewing {
+                    core.hideProgress()
+                }
+            }
+
+            let declared = SnippetTemplateEngine.declaredArguments(in: customAction.prompt)
+            var userArguments: [String: String] = [:]
+            if !declared.isEmpty {
+                guard let collected = SnippetArgumentsPrompt.run(
+                    snippetName: customAction.name,
+                    arguments: declared
+                ) else {
+                    if previewing { cancel() }
+                    return
+                }
+                userArguments = collected
+            }
+
+            let clipboardHistory = (NSPasteboard.general.string(forType: .string).map { [$0] }) ?? []
+            let context = SnippetTemplateEngine.ExpansionContext(
+                clipboardHistory: clipboardHistory,
+                selection: state.original,
+                now: Date(),
+                calendar: .current,
+                locale: .current,
+                timeZone: .current
+            )
+            let expansion = SnippetTemplateEngine.expand(
+                text: customAction.prompt,
+                context: context,
+                userArguments: userArguments
+            )
+
+            let provider = try core.quickActionProvider(for: customAction.model)
+            let request = AIRequest(
+                instructions: "You are an AI assistant executing an action. Follow the instructions and respond directly without conversational filler.",
+                messages: [AIMessage(role: .user, text: expansion.text)]
+            )
+            var response = ""
+            for try await event in provider.stream(request) {
+                guard case .text(let delta) = event else { continue }
+                response += delta
+                if previewing { state.append(delta) }
+            }
+            let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw AIProviderError.responseFailed("The model returned nothing.")
+            }
+
+            guard !Task.isCancelled else { return }
+            state.finish(trimmed)
+            if previewing { return }
+
+            switch customAction.outputMode {
+            case .previewInPanel:
+                break
+            case .openInAIChat:
+                core.aiChatCoordinator.ask(trimmed)
+            case .replaceSelection:
+                deliver(trimmed, to: target, title: state.target.title)
+            case .copyToClipboard:
+                Paster.copyPlainText(trimmed)
+                core.showMessage("\(state.target.title): Copied to clipboard")
+            case .insertBelow:
+                let insertion = state.original.isEmpty ? trimmed : (state.original + "\n\n" + trimmed)
+                deliver(insertion, to: target, title: state.target.title)
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            report(error, state: state, previewing: previewing)
+        }
+    }
+
     /// Without a panel there is nothing on screen saying the model is working, so the pill says it.
     private func produce(
-        _ state: QuickActionPanelState, previewing: Bool
+        _ state: QuickActionPanelState, action: QuickAction, previewing: Bool
     ) async throws -> String {
-        guard !previewing else { return try await generate(state, streaming: true) }
-        core.showProgress(state.action.progressTitle)
+        guard !previewing else { return try await generate(state, action: action, streaming: true) }
+        core.showProgress(state.target.progressTitle)
         defer { core.hideProgress() }
-        return try await generate(state, streaming: false)
+        return try await generate(state, action: action, streaming: false)
     }
 
     private func generate(
-        _ state: QuickActionPanelState, streaming: Bool
+        _ state: QuickActionPanelState, action: QuickAction, streaming: Bool
     ) async throws -> String {
-        if state.action.usesTranslationFramework {
+        if action.usesTranslationFramework {
             return try await TextTranslator.translate(state.original, to: state.targetLanguage)
         }
         let provider = try core.quickActionProvider()
         return try await QuickActionRunner.run(
-            state.action, selection: state.original, using: provider,
-            instructionOverride: store.settings.instructionOverride(for: state.action),
+            action, selection: state.original, using: provider,
+            instructionOverride: store.settings.instructionOverride(for: action),
             onDelta: { delta in
                 guard streaming else { return }
                 state.append(delta)
@@ -183,14 +338,14 @@ final class QuickActionCoordinator {
     }
 
     /// A replacement that never lands would otherwise lose the reply, so the clipboard keeps it.
-    private func deliver(_ text: String, to target: NSRunningApplication?, action: QuickAction) {
+    private func deliver(_ text: String, to target: NSRunningApplication?, title: String) {
         injector.replaceSelection(
             with: text, in: target,
-            onDelivered: { [weak self] in self?.core.showMessage("\(action.title) applied") },
+            onDelivered: { [weak self] in self?.core.showMessage("\(title) applied") },
             onFailed: { [weak self] in
                 Paster.copyPlainText(text)
                 self?.core.showMessage(
-                    "\(action.title) couldn't replace the selection — copied instead",
+                    "\(title) couldn't replace the selection — copied instead",
                     tone: .danger)
             })
     }
@@ -214,13 +369,25 @@ final class QuickActionCoordinator {
             },
             onDownloaded: { [weak self] in self?.rerun(state, target: target) },
             onReplace: { [weak self] text in
-                self?.deliver(text, to: target, action: state.action)
+                self?.deliver(text, to: target, title: state.target.title)
+            },
+            onContinueInChat: { [weak self] in
+                guard let self, !state.output.isEmpty else { return }
+                self.core.aiChatCoordinator.ask(state.output)
             })
     }
 
     private func rerun(_ state: QuickActionPanelState, target: NSRunningApplication?) {
         state.restart()
-        start { [weak self] in await self?.perform(state, target: target, previewing: true) }
+        start { [weak self] in
+            guard let self else { return }
+            switch state.target {
+            case .builtIn:
+                await perform(state, target: target, previewing: true)
+            case .custom(let customAction):
+                await performCustom(state, customAction: customAction, target: target, previewing: true)
+            }
+        }
     }
 
     private var targetLanguage: Locale.Language {
