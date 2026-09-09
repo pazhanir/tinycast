@@ -66,7 +66,7 @@ enum CommandID: String, CaseIterable, Sendable {
         case .createWindowLayout: return "Create Window Layout"
         case .captureWindowLayout: return "Create Layout from Current Windows"
         case .createQuicklink: return "Create Quicklink"
-        case .searchQuicklinks: return Quicklink.sfSymbol
+        case .searchQuicklinks: return "Search Quicklinks"
         case .searchSnippets: return "Search Snippets"
         case .createSnippet: return "Create Snippet"
         case .importQuicklinks: return "Import Quicklinks"
