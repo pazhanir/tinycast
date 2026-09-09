@@ -461,8 +461,12 @@ struct ExtensionTests {
                 """), query: "")
         check("kind is form", form.kind == .form)
         check("fields collected", form.fields.count == 2)
-        check("form has no selectable rows", form.items.isEmpty)
-
+        check("only focusable fields are rows", form.items.count == 1)
+        check("the row is the field, not the separator", form.items.first?.node.id == 3)
+        check("a separator has no focus index", form.focusItem(for: form.fields[1]) == nil)
+        check(
+            "a text area keeps the vertical keys",
+            ExtensionFormField(type: "Form.TextArea").ownsVerticalKeys)
         let detail = ExtensionScreen(
             // Doubled delimiters: the heading contains `"#`, which closes a single-# string.
             tree: tree(##"{"id":2,"type":"Detail","props":{"markdown":"# Hi"},"children":[]}"##),
@@ -644,6 +648,7 @@ struct ExtensionTests {
             const React = require("react");
             const path = require("node:path");
             const crypto = require("node:crypto");
+            const { fileURLToPath, pathToFileURL } = require("node:url");
             const h = React.createElement;
             module.exports.default = function Command() {
               const [count, setCount] = React.useState(0);
@@ -658,12 +663,23 @@ struct ExtensionTests {
                 typeof AbortSignal.timeout, typeof AbortSignal.abort, typeof AbortSignal.any,
                 String(AbortSignal.timeout(5e3).aborted), AbortSignal.abort().reason.name,
               ].join(",");
+              const errorCode = (callback) => {
+                try { callback(); return "none"; } catch (error) { return error.code; }
+              };
+              const filePaths = [
+                fileURLToPath("file:///Applications/Tinycast%20Beta.app"),
+                fileURLToPath(pathToFileURL("/tmp/a#b.png")),
+                pathToFileURL("/tmp/My Image.png").href,
+                errorCode(() => fileURLToPath("file:///tmp/a%2Fb")),
+                errorCode(() => fileURLToPath("file://example.com/tmp/a")),
+                errorCode(() => fileURLToPath("https://example.com/a")),
+              ].join("\\n");
               return h(List, { navigationTitle: "Synthetic", isLoading: false },
                 h(List.Item, {
                   title: "count=" + count,
                   subtitle: path.join("/a/b", "../c"),
                   icon: Icon.Circle,
-                  accessories: [{ text: digest }, { text: abortable }],
+                  accessories: [{ text: digest }, { text: abortable }, { text: filePaths }],
                   actions: h(ActionPanel, null,
                     h(Action, { title: "Bump", onAction: () => setCount((v) => v + 10) }))
                 }));
@@ -698,8 +714,17 @@ struct ExtensionTests {
         check("toast reached the host", host.toasts == ["hello"], host.toasts.joined(separator: ","))
         check(
             "AbortSignal carries its statics",
-            ExtensionAccessoriesView_labelForTest(screen.items.first?.node.array("accessories").last)
+            ExtensionAccessoriesView_labelForTest(
+                screen.items.first?.node.array("accessories").dropFirst().first)
                 == "function,function,function,false,AbortError",
+            String(describing: screen.items.first?.node.array("accessories").dropFirst().first))
+        check(
+            "fileURLToPath decodes a path and rejects an unusable URL",
+            ExtensionAccessoriesView_labelForTest(screen.items.first?.node.array("accessories").last)
+                == "/Applications/Tinycast Beta.app\n/tmp/a#b.png\n"
+                + "file:///tmp/My%20Image.png\n"
+                + "ERR_INVALID_FILE_URL_PATH\nERR_INVALID_FILE_URL_HOST\n"
+                + "ERR_INVALID_URL_SCHEME",
             String(describing: screen.items.first?.node.array("accessories").last))
 
         // Dispatch the row's action and confirm the re-render.

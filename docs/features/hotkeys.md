@@ -42,9 +42,10 @@ the keycap rendering — only the _engine_ differs.
 Bindings persist as JSON strings under `hotkey.<action>` UserDefaults keys, computed in one place —
 `HotKeyAction.defaultsKey`, which doubles as the `HotKeyCenter` registration id. The set of bound
 bundle IDs lives in `boundAppBundleIDs` and is re-registered on launch. System Settings panes use
-`boundPaneBundleIDs`; custom commands and quicklinks use their stable UUIDs in
-`boundCustomCommandIDs` and `boundQuicklinkIDs`. Those two are the per-item case — unlike a fixed
-catalog, there is no `allCases` to walk — so each needs an index for `start()` to re-register from
+`boundPaneBundleIDs`; custom commands, quicklinks and window layouts use their stable UUIDs in
+`boundCustomCommandIDs`, `boundQuicklinkIDs` and `boundWindowLayoutIDs`. Those three are the per-item
+case — unlike a fixed catalog, there is no `allCases` to walk — so each needs an index for `start()`
+to re-register from
 and to prune bindings whose record was deleted while Tinycast wasn't running. That prune is why
 `QuicklinkStore` loads at launch even when the feature is off
 (see [quicklinks.md](quicklinks.md#hotkeys)).
@@ -144,9 +145,13 @@ window — that is un-remapped HID behaviour, not something Tinycast can stop.
 
 Once remapped, Caps Lock arrives as **keyDown/keyUp** rather than `flagsChanged`. Both ends are
 converted into Left Control `flagsChanged` transitions, so everything downstream sees the Hyper chord
-move with the key rather than a swallowed press. A classic `IOHIDSystem` connection reads and drives
-the Caps Lock LED and lock state; it is used only by the explicit Quick Press toggle and the one-time
-unlatch when the remap is installed.
+move with the key rather than a swallowed press. That conversion is also why the **fn bit is scrubbed
+from both ends**: every function key reports `NX_SECONDARYFNMASK`, harmless on a keyDown but read as a
+real fn press once the event is a `flagsChanged`, which fired anything bound to fn on every Hyper
+press. Only the Hyper key's own two events are scrubbed, so Hyper+F-key and Hyper+arrow keep the fn
+bit they are entitled to. A classic `IOHIDSystem` connection reads and drives the Caps Lock LED and
+lock state; it is used only by the explicit Quick Press toggle and the one-time unlatch when the remap
+is installed.
 
 ### Press tracking uses toggle semantics
 

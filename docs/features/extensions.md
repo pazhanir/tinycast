@@ -115,10 +115,13 @@ Two host-call flavours:
 | `Service/ExtensionOAuthKeychain.swift` | secure OAuth token storage backed by macOS Keychain |
 | `Service/ExtensionOAuthSession.swift` | PKCE state tracking, browser launch, and callback redirect resolution |
 | `Service/ExtensionStorage.swift` | per-extension `LocalStorage`, `Cache` and preference values (one JSON file each) |
+| `Service/ExtensionCommandMetadataStore.swift` | every command's subtitle override and refresh bookkeeping, in one small file |
 | `Service/ExtensionCatalog.swift` | discovery on disk, install, uninstall, import-from-Raycast |
 | `Service/ExtensionCleanup.swift` | the build workspace's name, the launch sweep, and reclaiming orphans |
 | `Service/ExtensionManager.swift` | the single owner: installed set, the one running session, launcher entries |
 | `Model/ExtensionManifest.swift` | `package.json` → commands, preferences, arguments |
+| `Model/ExtensionRefreshPolicy.swift` | background-refresh decisions: interval parsing, due dates, backoff |
+| `Model/ExtensionLaunchType.swift` | `userInitiated` / `background`, mirroring `@raycast/api` `LaunchType` |
 | `Model/RenderNode.swift` | the decoded render tree (`RenderTree` / `RenderNode` / `RenderValue`) |
 | `Model/ExtensionAppearance.swift` | the per-extension icon override and its tint palette |
 | `Service/ExtensionAppearanceStore.swift` | where those overrides persist |
@@ -194,7 +197,87 @@ screens hold (see [palette.md](palette.md)).
   The feature's own fills live in `ExtensionColors` — never in `Theme`.
 - **Form** — label-left/control-right rows. Field values live in the extension (React owns them); every
   edit dispatches `onTinycastChange` and the resulting re-render is what updates the control, so
-  `defaultValue`, a controlled `value`, and `ref.reset()` all behave.
+  `defaultValue`, a controlled `value`, and `ref.reset()` all behave. **A form takes the whole
+  keyboard**: its fields *are* the palette's rows, so the search field is hidden and the header left
+  empty. `ExtensionFormField` says what each `Form.*` node is —
+  which of them focus lands on, which keys the control keeps, and which need a focus ring drawn — and
+  `ExtensionScreen` publishes exactly the focusable ones as `items`, so ↑/↓, ⇥/⇧⇥ and the flat
+  selection all walk one order. ⇥ wraps at both ends, ↵ opens a closed picker then commits its choice,
+  while ⌘↵ submits the form from any field. Return and keypad Enter behave alike; holding either
+  never repeats an activation or submission. Space or ↵ toggles a checkbox and opens a file picker,
+  ←/→ step a dropdown's value and a tag picker's chips, and a text area keeps ↑/↓ for its own lines so
+  only ⇥ leaves it. A field marked `autoFocus`
+  is where the form opens, otherwise the first one. While a control holds focus
+  `PaletteState.isEditingField` is set, which is what keeps a bare backspace deleting text rather
+  than backing out of the command. The footer's Actions half is drawn only when the panel holds more
+  than the one action the ⌘↵ pill already runs, so a plain Submit-only form shows just the pill.
+
+  **Every control is drawn by the feature, none by SwiftUI's stock parts.** `ExtensionFieldChrome`
+  is the one rounded surface they all share and `ExtensionFormMetrics` the one place their geometry
+  is stated, so a field, a picker and a text area line up by construction. A `Picker` opens only to a
+  click and a `DatePicker` has no expression field, which is why neither is used.
+
+  A `Form.Dropdown` and a `Form.TagPicker` are the same control — `ExtensionPickerField` — differing
+  only in whether it holds one value or several. It drops `ExtensionPickerList`, a searchable list,
+  and **the control keeps first responder the whole time it is open**: the list is a separate window,
+  and a second field inside it would take focus off the control and close the list. So the
+  popover's search row renders the query rather than editing it, and every key — the arrows, ↵, ⎋,
+  ⌫ and each typed character — is claimed on the control. `PaletteState.isControlListOpen` is what
+  keeps the palette's own arrow and Escape handlers out of an open list; without it ↓ moved the
+  form's selection instead of the list's highlight.
+
+  **The list is hosted in a window of its own**, `ExtensionListPanel`, exactly as the ⌘K menu is by
+  `MenuPanelController`. Glass samples what lies behind the window it is in, so a list drawn as an
+  in-window overlay sampled the form and read as a different material however its fill was tuned.
+  With its own borderless child panel it samples the desktop, and a picker and the actions menu are
+  the same surface by construction rather than by matching. It keeps the panel's row pitch, icon
+  slot and overflow fade, and a focused control takes the system accent edge that Settings and the
+  shortcut recorder already draw. Opening a long list reveals its current selection; updates to
+  row titles, icons, sections and date details refresh an open panel even when row IDs stay the same.
+  Its metrics are restated in `ExtensionFormMetrics` rather than read off the panel: an extension's
+  surfaces own their own, and a launcher change must never move a form.
+
+  **The query is typed into the control, not into the list.** The one field editor belongs to the
+  palette's search field, so a picker draws its own caret (`ExtensionCaret`) and renders what has
+  been typed in place of its value — the text appears where the eye already is, and a multi-select
+  keeps its chosen values beside it. `ExtensionQueryText` overlays the caret on the text's edge, so
+  the prompt and the typed query start exactly where the closed control's value does, and the caret
+  is stepped by a timer at AppKit's own rate — a `repeatForever` animation fades where a real caret
+  switches. The list is results only.
+
+  **Form activation keys use `ExtensionFormKey`**, applied by `ExtensionFormKeys` to each field.
+  The palette defers to focused fields; an open Actions menu and IME composition keep precedence.
+  `ExtensionListKey` handles list navigation and search editing. A stack of
+  separate `onKeyPress` modifiers let a character rule shadow ⌫, and ⌫ arrives carrying U+007F
+  rather than the U+0008 SwiftUI's `.delete` names, so nothing was ever deleted from a search.
+  Both spellings are answered before characters are considered at all, and the rules are pure so
+  `ext-form-test` drives them.
+
+  `ExtensionDateField` is the same shape over `ExtensionDateExpression`, which parses what Raycast's
+  date field parses — "tomorrow at 10am", "in 3 days", "next friday", "25 dec" — and offers the same
+  presets. It is pure and takes its clock and calendar as parameters, so `ext-form-test` drives it
+  and the popover's flip-up rule directly.
+
+  A picker opens downward, or upward when the form's bottom edge would cut the list off, which is
+  `ExtensionFormMetrics.placement` applied by `ExtensionListPlacement` against the palette's own
+  frame in screen space, so a list can overhang the form's scroller but never the window. The
+  chevron points the way the list actually went. Scrolling its control out of view closes the list,
+  and so does a press on bare form, which the form catches behind its fields.
+
+  **React answers a keystroke a render late**, so a value echoed back mid-word is older than what has
+  been typed since. Both text controls hold the last edit they dispatched and ignore every echo until
+  it catches up; without that, typing at speed dropped characters — "Test from Codex" arrived as
+  "T Codex".
+
+  Every control carries its title as an accessibility label and its selection as a value, so a
+  picker announces "Difficulty, Easy" rather than the chevron it is drawn with. It reads under the
+  pointer as well as the keyboard: controls lift on hover, a list's rows highlight under the mouse
+  so both share one selection, and clicking a control takes focus as well as acting, which is what
+  lets the two be mixed mid-form.
+
+  `Tests/ext-form-test.swift` drives activation rules, geometry and the parser; earlier interaction checks used
+  a Form Lab extension covering every control, sectioned and empty and 40-option lists, validation
+  errors, wrapping labels, and forms taller than the palette, in both appearances.
 - **ActionPanel** — flattened (sections and submenus included) into `ExtensionActionsPanel`, the
   feature's own scrolling ⌘K panel. Its rows are `ExtensionActionItem`, not `PopoverMenuItem`: an
   action's `icon` is a full `ImageLike`, so it resolves through `ExtensionImage` like every other
@@ -212,7 +295,9 @@ screens hold (see [palette.md](palette.md)).
   root, which would tear the command down before its `await confirmAlert(…)` ever returns.
 - **Command arguments** — a command declaring `arguments` shows inline fields sized to their
   placeholders, right after the typed text, exactly as Raycast does. Tab walks search field → each
-  argument → back; ↵ from any of them runs the command with the values as `props.arguments`; a blank
+  argument → back; Left/Right do the same only when their caret reaches a field boundary. Returning
+  to the search field selects its query, so Right first places the caret at its end and then enters
+  the first argument. ↵ from any of them runs the command with the values as `props.arguments`; a blank
   required argument blocks the launch and focuses the offending field. The fields get their own
   `FocusState` rather than joining the search field's, so the palette's one always-attached `TextField`
   (see [palette.md](palette.md)) keeps owning focus.
@@ -346,6 +431,38 @@ asynchronously and only while extensions are on, so at launch "not installed yet
 identical, and pruning there would quietly drop a working binding. Uninstalling clears its own instead,
 along with the extension's stored preferences and its chosen icon.
 
+## Background refresh
+
+A `no-view` command declaring `interval` (`"90s"`, `"1m"`, `"12h"`, `"1d"`) re-runs headlessly on that
+schedule, exactly as Raycast's background refresh: the same bundle runs to completion with
+`environment.launchType` and `props.launchType` set to `Background`, and `updateCommandMetadata` is
+the only thing that escapes it — the subtitle it writes appears beside the command's name in launcher
+search, unless it merely restates the owning extension, which the row already carries on the right.
+Coffee's "Caffeinate Status" is the reference case: every minute it rewrites its subtitle to
+`✔ Caffeinated (…)` or `✖ Decaffeinated`.
+
+Like Raycast, refresh is opt-in per command: off until the first manual run or the Settings toggle
+(Settings › Extensions › the command › Background refresh), which also shows the last refresh and the
+last error. The launcher row carries the state too: a dot while refresh is on, its dimmed twin
+while it is off, a warning with the error as its tooltip when the last background run failed, and
+the Actions menu offers Enable / Disable Background Refresh plus Refresh Now. The override lives in
+`extension-commands.json` — derived state, so no backup carries it — and uninstall removes an
+extension's records with everything else. Deliberately not in `extension-data/<name>.json`: drawing a
+launcher row reads every command's metadata, and that file holds the extension's whole `Cache`.
+
+The scheduler is one loop doing date math, not one timer per command: close ticks run as a single
+batch, installs share a deterministic phase so they don't re-fire in lockstep after sleep, and a wakeup
+with nothing due costs a comparison. Three guards keep it cheap:
+
+- Intervals clamp to a minute; failures back off exponentially to a day.
+- A tick never preempts a running command — foreground first, the tick waits for the next due.
+- A hung run dies before its successor is due, and a background run shows no toast, HUD, alert or
+  window call, since those would fire on a timer.
+
+`ExtensionRefreshPolicy` is where the parsing, due dates and backoff live, driven by
+`Tests/ext-refresh-test.swift`; `Tests/ext-metadata-test.swift` covers the store behind it. A `menu-bar` interval parses but never schedules, since menu-bar
+commands don't run at all.
+
 ## What's supported
 
 **Components** — `List` (+ `Item`, `Section`, `EmptyView`, `Item.Detail`, `Dropdown`), `Grid`
@@ -359,7 +476,8 @@ along with the extension's stored preferences and its chosen icon.
 **APIs** — `Clipboard`, `LocalStorage`, `Cache`, `environment`, `getPreferenceValues`, `showToast`,
 `showHUD`, `confirmAlert`, `closeMainWindow`, `popToRoot`, `clearSearchBar`, `open`, `trash`,
 `showInFinder`, `getApplications`, `getDefaultApplication`, `getFrontmostApplication`,
-`getSelectedText`, `getSelectedFinderItems`, `launchCommand`, `openExtensionPreferences`,
+`getSelectedText`, `getSelectedFinderItems`, `launchCommand`, `updateCommandMetadata`,
+`openExtensionPreferences`,
 `useNavigation`, `OAuth`, `Icon`, `Color`, `Image.Mask`, `Keyboard.Shortcut.Common`, `LaunchType`.
 
 **OAuth 2.0 PKCE** — `OAuth.PKCEClient`, `OAuth.TokenSet`, `OAuth.RedirectMethod`, with S256 challenges and
@@ -405,6 +523,12 @@ pieces, so a progress callback reports how much has been written, never how much
 One shortcut inside `Transform`: it acknowledges a write as soon as `_transform` calls back rather
 than waiting for room on its readable side, so only a transform nobody reads from can grow unbounded.
 
+`url.fileURLToPath` decodes percent-escapes the way Node does on darwin, so an asset path carrying a
+space resolves to a file the image loader can open, and it rejects an encoded separator or a non-local
+host rather than returning a wrong path. Node's `windows` override is absent: Tinycast only runs on
+macOS, so drive-letter and UNC output would be unreachable. `url.pathToFileURL` escapes `?` and `#`
+so a filename holding either survives the round trip.
+
 A bundle that ships its own HTTP client rather than calling `fetch` — node-fetch travels inside
 `@raycast/utils`, and axios has a Node adapter — reaches the network through `http.request`, so the
 shim answers it: one request when the body ends, one response chunk when the bridge replies. The
@@ -417,7 +541,8 @@ zips ship that binary `644`, so the chmod is what makes it runnable at all; the 
 covers the rest of the wrapper. Color Picker is the reference case.
 
 **Command modes** — `view` renders into the palette; `no-view` runs headless with the palette closed.
-Both receive `props.arguments` and `props.launchType`.
+Both receive `props.arguments` and `props.launchType`. A `no-view` command declaring `interval`
+(`"1m"`, `"12h"`, `"1d"`) also refreshes in the background — see below.
 
 Measured against the 37 extensions installed in a real Raycast on the development machine: **32
 extensions / 114 of 147 view commands** boot and render. `Scripts/raycast-runtime/test.mjs <dir>` and
@@ -489,6 +614,7 @@ never shares with an installed copy.
 | --- | --- | --- |
 | The extension | `extensions/<name>/` | yes |
 | `LocalStorage`, `Cache`, preferences | `extension-data/<safe name>.json` | yes |
+| Command subtitle, refresh state | `extension-commands.json` | yes |
 | `environment.supportPath` | `extension-support/<safe name>/` | yes |
 | OAuth tokens | macOS Keychain (`com.tinycast.extensions.oauth`) | yes |
 | Icon override | `UserDefaults` → `extensionAppearances` | yes |

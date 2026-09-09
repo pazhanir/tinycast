@@ -139,6 +139,14 @@ final class AppSettings {
         didSet { defaults.set(clipboardDisabledApps, forKey: Key.clipboardDisabledApps.rawValue) }
     }
 
+    /// What ↵ does on a clipboard entry; ⌘↵ always does the other one.
+    var clipboardDefaultAction: ClipboardDefaultAction {
+        didSet {
+            defaults.set(
+                clipboardDefaultAction.rawValue, forKey: Key.clipboardDefaultAction.rawValue)
+        }
+    }
+
     var launchAtLogin: Bool {
         didSet { LaunchAtLogin.set(launchAtLogin) }
     }
@@ -167,6 +175,11 @@ final class AppSettings {
     /// How long a closed palette keeps its state before popping back to the root launcher.
     var popToRootTimeout: PopToRootTimeout {
         didSet { defaults.set(popToRootTimeout.rawValue, forKey: Key.popToRootTimeout.rawValue) }
+    }
+
+    /// Whether Escape walks back through the screens the palette opened, or just closes it.
+    var escapeKeyBehavior: EscapeKeyBehavior {
+        didSet { defaults.set(escapeKeyBehavior.rawValue, forKey: Key.escapeKeyBehavior.rawValue) }
     }
 
     /// Follow macOS, or pin Tinycast to one appearance. Applied by `AppCore.applyAppearance()`.
@@ -407,9 +420,17 @@ final class AppSettings {
         }
     }
 
-    /// Points between tiled windows and the screen edge; `WindowLayout` caps it.
+    /// Points between tiled windows and the screen edge; `WindowPlacementEngine` caps it.
     var windowGap: Int {
         didSet { defaults.set(windowGap, forKey: Key.windowGap.rawValue) }
+    }
+
+    /// Its own flag: hiding 34 command rows must not also hide the layouts you wrote.
+    var windowLayoutsShowInLauncher: Bool {
+        didSet {
+            defaults.set(
+                windowLayoutsShowInLauncher, forKey: Key.windowLayoutsShowInLauncher.rawValue)
+        }
     }
 
     /// Re-triggering a half steps it through ⅓ and ⅔ instead of re-applying the same frame.
@@ -469,6 +490,9 @@ final class AppSettings {
         clipboardDisabledApps =
             defaults.stringArray(forKey: Key.clipboardDisabledApps.rawValue)
             ?? ["com.apple.keychainaccess", "com.apple.Passwords"]
+        clipboardDefaultAction =
+            defaults.string(forKey: Key.clipboardDefaultAction.rawValue)
+            .flatMap(ClipboardDefaultAction.init) ?? .paste
         launchAtLogin = LaunchAtLogin.isEnabled
         hyperKey =
             defaults.string(forKey: Key.hyperKey.rawValue).flatMap(HyperKeyPhysicalKey.init)
@@ -486,6 +510,9 @@ final class AppSettings {
         popToRootTimeout =
             PopToRootTimeout(rawValue: defaults.integer(forKey: Key.popToRootTimeout.rawValue))
             ?? .immediately
+        escapeKeyBehavior =
+            defaults.string(forKey: Key.escapeKeyBehavior.rawValue).flatMap(EscapeKeyBehavior.init)
+            ?? .navigateBackOrClose
         appearance =
             defaults.string(forKey: Key.appearance.rawValue).flatMap(AppAppearance.init) ?? .system
         compactMode = defaults.bool(forKey: Key.compactMode.rawValue)
@@ -580,6 +607,9 @@ final class AppSettings {
         // Unset reads as 0, which is the intended default anyway — no gap.
         windowGap = defaults.integer(forKey: Key.windowGap.rawValue)
         windowCycleOnRepeat = defaults.bool(forKey: Key.windowCycleOnRepeat.rawValue)
+        windowLayoutsShowInLauncher =
+            defaults.object(forKey: Key.windowLayoutsShowInLauncher.rawValue) == nil
+            || defaults.bool(forKey: Key.windowLayoutsShowInLauncher.rawValue)
         quicklinksEnabled = defaults.bool(forKey: Key.quicklinksEnabled.rawValue)
         quicklinksShowInLauncher =
             defaults.object(forKey: Key.quicklinksShowInLauncher.rawValue) == nil

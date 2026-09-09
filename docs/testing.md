@@ -57,7 +57,13 @@ is the trap: a running Tinycast records every write to it as a genuine copy, so 
 lands in clipboard history looking like something the user copied. `notes-editor-test` seeded one on
 every run from #232 onward by calling the native `copy:`/`cut:`/`paste:` actions; it now drives the
 `writeSelection(to:types:)` and `readSelection(from:)` primitives those actions delegate to, against
-`NSPasteboard.withUniqueName()`. Same AppKit path, no shared side effect.
+`NSPasteboard.withUniqueName()`. Same AppKit path, no shared side effect. `pasteboard-test` is the
+second case, and it is why `ClipboardManager.fileURLs(on:volatileRoots:)` and `Paster.write(_:store:to:)`
+each take the thing they act on as a parameter: a seam that exists so the harness never has to reach
+for the shared board. Its scratch tree lives under `temporaryDirectory`, which is itself a volatile
+root, so the cases about *reading* files inject an empty root list and the one case about durability
+is the one that runs against the shipped roots. Both file URL and legacy filename boards also cover
+the capture cap, exact ordering, rejected prefixes, duplicates and symlinks using private fixtures.
 
 Never join a compile to its run with `&&` in a `set -e` script. `set -e` is specified to ignore a
 failing command in a non-final AND-OR list member, so `swiftc … && /tmp/x` swallows a compile error and
@@ -79,8 +85,10 @@ If a change touches anything in the right column, the harness on the left is man
 | `app-name-test` | `Platform/AppDisplayName.swift` — every path that names a scanned bundle |
 | `calc-test` | all of `Calculator/Model/` |
 | `calendar-test` | all of `Calendar/Model/` — link detection, the join window, the day buckets |
-| `clipboard-test` | `Clipboard/Model/ClipboardStore.swift` |
+| `clipboard-test` | `Clipboard/Model/ClipboardStore.swift`, `ClipboardFilter.swift`, `ClipboardFileKind.swift`, the colour trio |
+| `pasteboard-test` | `Clipboard/Service/ClipboardManager.swift` capture and `Paster.write` — what a Finder copy reads as, and what a file entry writes back |
 | `emoji-test` | `Emoji/Model/EmojiCatalog.swift`, `EmojiGridGeometry.swift`, the generated data |
+| `palette-navigation-test` | `Palette/PaletteState.swift`'s screen motions — `prepare`, `replace`, `push`, `pop` |
 | `palette-selection-test` | `Features/PaletteRowIndex.swift` |
 | `palette-placement-test` | `DesignSystem/Theme.swift`, `Palette/PalettePlacement.swift` |
 | `hotkey-test` | `HotKeys/Model/DoubleTapModifier.swift`, `DoubleTapDetector.swift`, `HyperKey.swift`, `HotKeyAction.swift`, `Service/KeyShortcut.swift`, and the command→action mapping in `Launcher/Model/CommandID.swift` |
@@ -88,19 +96,23 @@ If a change touches anything in the right column, the harness on the left is man
 | `callout-test` | `DesignSystem/Theme.swift`, `HotKeys/UI/CalloutPlacement.swift` |
 | `system-action-test` | `SystemActions/Model/SystemAction.swift` |
 | `volume-test` | `SystemActions/Model/VolumeLevel.swift` |
-| `window-command-test` | `WindowManagement/WindowCommand.swift`, `WindowLayout.swift`, `WindowActionMemory.swift` |
+| `window-command-test` | `WindowManagement/WindowCommand.swift`, `WindowPlacementEngine.swift`, `WindowActionMemory.swift` |
+| `window-layout-test` | `WindowManagement/Model/WindowLayout*.swift` — the layout record, its geometry and its inverse, the plan and the store |
 | `custom-command-test` | `CustomCommands/Model/CustomCommand.swift`, `Service/ShellCommandRunner.swift` |
 | `uninstall-test` | all five pure files in `Uninstall/Model/` |
-| `quicklink-test` | all four files in `Quicklinks/Model/` |
+| `quicklink-test` | all of `Quicklinks/Model/` |
 | `snippets-test` | all of `Snippets/Model/` and `Snippets/Service/`, plus `Platform/HealthTicker.swift` |
 | `notes-test` | all of `Notes/Model/` and `Notes/Service/`, plus the real fuzzy matcher and signposts |
 | `notes-editor-test` | the literal Notes editor with real TextKit 2 and AppKit editing objects |
 | `raycast-test` | `Backup/Service/RaycastDecoder.swift`, `Scrypt.swift`, `Platform/Compression/Zlib.swift` |
 | `symbols-test` | `Extensions/Service/SymbolCatalog.swift`, against this machine's CoreGlyphs |
 | `ext-store-test` | `Extensions/Model/` — the registry model and both registry APIs' parsers |
+| `ext-refresh-test` | `Extensions/Model/ExtensionRefreshPolicy.swift` — interval parsing, due dates, backoff, subtitle fallback, indicator state |
+| `ext-metadata-test` | `Extensions/Service/ExtensionCommandMetadataStore.swift` — round-trip, failure runs, uninstall |
 | `ext-test` | the extension runtime end to end — boots a real bundle in JavaScriptCore and renders it |
 | `ext-icon-test` | `Extensions/Service/ExtensionIconCache.swift` — artwork sizing and its fallback |
 | `entry-icon-test` | `EntryIcon` — that each case draws, caches and prints apart from the others, and that a moved `FileIconStamp` retires the bitmap decoded before it |
+| `text-diff-test` | `QuickActions/Model/TextDiffEngine.swift` — exact chunks, Unicode, ties, token-cap boundaries and fast paths |
 | `settings-backup-test` | `Settings/AppSettingsKey.swift`, `Backup/Model/SettingsBackupCoverage.swift` |
 | `backup-archive-test` | all of `Backup/Model/`, plus `Backup/Service/BackupStaging.swift` |
 | `updates-test` | `Updates/Model/` — version precedence, channel filtering, install route, readiness |
@@ -133,7 +145,7 @@ when touching a pure file:
 - `Calculator/Model/` still takes its clock via `now`/`calendar` and its rates via `rates`
 - `Uninstall/Model/`'s deciding half still receives directory **names** and a `PathFacts`, never URLs
 - `HotKeys/Model/DoubleTap*` still take the clock as a parameter
-- `WindowManagement/` geometry still touches no `NSScreen` and makes no AX call
+- `WindowManagement/Model/` still touches no `NSScreen` and makes no AX call, layouts included
 - `Features/PaletteRowIndex.swift` still imports Foundation alone, despite living under `Features/`
 - `Quicklinks/Model/` is still handed the home directory rather than reading it
 - `FileSearch/Model/` is still handed the home directory rather than reading it
@@ -155,7 +167,7 @@ find ~/Library/Developer/Xcode/DerivedData -name "Tinycast*.app" -maxdepth 6 -pr
 - No `@unchecked Sendable`, `nonisolated(unsafe)` or `assumeIsolated` added without a stated reason.
 - The type-checker did not time out. `LauncherList.rows` already carries an explicit annotation for
   this reason; the fix for a timeout is an annotation, not a restructure.
-- Release binary under **5 MB**, and under 2% growth for an ordinary change.
+- Release binary growth under **2%** for an ordinary change.
 
 ### Lint
 
@@ -193,6 +205,34 @@ swiftc -O -swift-version 6 Tinycast/Platform/Signposts.swift \
 
 Every query runs twice: once on the shipped rules and once with five extra user patterns, so the output
 says what the ignore list itself costs rather than only what Spotlight does.
+
+The calculator benchmark is deterministic — an injected clock, calendar and rate table — so it is a
+timing harness rather than an assertion one, and stays out of `run-tests.sh` for that reason:
+
+```sh
+swiftc -O -swift-version 6 Tinycast/Features/Calculator/Model/*.swift \
+    Tests/calc-performance.swift -o /tmp/calc-performance
+/tmp/calc-performance          # µs per query, by grammar
+/tmp/calc-performance --probe  # every answer as JSON, to diff two builds
+/tmp/calc-performance --cold "10kg to lb"   # first query, including catalog decode
+```
+
+`Tests/text-diff-performance.swift` is the same shape for `TextDiffEngine`: build it with `-O`
+against the engine, pass a token count, a workload (`dense`, `sparse`, `equal`, `empty`) and an
+iteration count for timings, or `--probe` to diff every chunk between two builds.
+
+`Tests/clipboard-file-performance.swift` measures file capture with private pasteboards and temporary
+fixtures. It reports wall and process CPU time as JSON for modern and legacy formats, including
+32/1,000/10,000 durable files and rejected-input controls. Keep it outside `run-tests.sh`; compare
+three fresh processes per build with identical `-O` settings:
+
+```sh
+swiftc -O -swift-version 6 Tinycast/Platform/PasteboardFiles.swift \
+    Tinycast/Features/Clipboard/Model/{ClipboardStore,ClipboardFilter,ColorValue,ColorFormat,ColorSpaces}.swift \
+    Tinycast/Features/Clipboard/Service/ClipboardManager.swift \
+    Tests/clipboard-file-performance.swift -o /tmp/clipboard-file-performance
+/tmp/clipboard-file-performance
+```
 
 `Signposts.interval` owns an explicit `defer` around the wrapped work on purpose. The obvious spelling
 leaks the interval when the work throws, because the `.end` emit is skipped on the throw path and the
@@ -235,6 +275,17 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 
 - Palette hotkey opens the launcher; pressing it again closes it; Escape clears a non-empty query,
   then hides on a second press; clicking away closes it
+- Search a mode command (Clipboard History, Search Emoji, Search Quicklinks, Search Files, AI Chat)
+  and run it: Escape returns to the launcher **with the query still typed and the row still
+  selected**, and the next press clears it. The same screen from its own global hotkey hides the
+  palette instead, and shows its own header icon rather than a back chevron
+- ⌘⎋ from any depth lands on an empty root search with the window still open — **must be checked on
+  a real keyboard**: macOS claims the chord, so `CommandEscapeTap` is the only thing that delivers it
+  and it needs Accessibility granted to the running build. With the palette closed, ⌘⎋ still does
+  whatever macOS does with it
+- A bare ⌫ in an empty field walks the same path Escape does
+- General ▸ Escape Key Behavior set to `Close window and pop to root`: Escape on any screen closes
+  the window, and reopening lands on the root search whatever Pop to Root Search says
 - Reopening focuses the search field with an empty query, in the same position and at the same size
 - Compact mode: typing expands it, and the search bar does **not** shift vertically during the swap
 - With a CJK IME: the placeholder clears as soon as composition starts and the composing text never

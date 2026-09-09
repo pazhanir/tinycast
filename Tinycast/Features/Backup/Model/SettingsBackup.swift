@@ -7,6 +7,7 @@ struct SettingsBackup: Codable {
     var hotkeys: HotkeyBackup?
     var customCommands: [CustomCommand]?
     var quicklinks: [Quicklink]?
+    var windowLayouts: [WindowLayout]?
     var favoriteApps: [String]?
     var hiddenLauncherItems: [String]?
     var hiddenLauncherKinds: [String]?
@@ -18,6 +19,7 @@ struct SettingsBackup: Codable {
         // Carried, unlike the consent flags: recording your own copies grants no permission class.
         var clipboardEnabled: Bool?
         var clipboardRetentionDays: Int?
+        var clipboardDefaultAction: String?
         var clipboardDisabledApps: [String]?
         var launchAtLogin: Bool?
         var hyperKey: String?
@@ -26,6 +28,7 @@ struct SettingsBackup: Codable {
         var emojiSkinTone: String?
         var showInMenuBar: Bool?
         var popToRootSeconds: Int?
+        var escapeKeyBehavior: String?
         var appearance: String?
         var compactMode: Bool?
         var showFavoritesInCompactMode: Bool?
@@ -46,6 +49,7 @@ struct SettingsBackup: Codable {
         var windowManagementShowInLauncher: Bool?
         var windowGap: Int?
         var windowCycleOnRepeat: Bool?
+        var windowLayoutsShowInLauncher: Bool?
         // Carried, unlike `snippetsEnabled`: opening a link grants no permission class of its own.
         var quicklinksEnabled: Bool?
         var quicklinksShowInLauncher: Bool?
@@ -80,6 +84,7 @@ struct SettingsBackup: Codable {
         var systemActions: [String: HotKeyBinding]?
         var windowCommands: [String: HotKeyBinding]?
         var quicklinks: [String: HotKeyBinding]?
+        var windowLayouts: [String: HotKeyBinding]?
     }
 
     /// A tally of what an import touched, for user-facing confirmation.
@@ -91,6 +96,7 @@ struct SettingsBackup: Codable {
         var aliases = 0
         var customCommands = 0
         var quicklinks = 0
+        var windowLayouts = 0
     }
 }
 
@@ -104,6 +110,7 @@ extension SettingsBackup {
         backup.settings = SettingsData(
             clipboardEnabled: s.clipboardEnabled,
             clipboardRetentionDays: s.clipboardRetention.rawValue,
+            clipboardDefaultAction: s.clipboardDefaultAction.rawValue,
             clipboardDisabledApps: s.clipboardDisabledApps,
             launchAtLogin: s.launchAtLogin,
             hyperKey: s.hyperKey.rawValue,
@@ -113,6 +120,7 @@ extension SettingsBackup {
             showInMenuBar: UserDefaults.standard.object(forKey: SettingsKey.showInMenuBar) as? Bool
                 ?? true,
             popToRootSeconds: s.popToRootTimeout.rawValue,
+            escapeKeyBehavior: s.escapeKeyBehavior.rawValue,
             appearance: s.appearance.rawValue,
             compactMode: s.compactMode,
             showFavoritesInCompactMode: s.showFavoritesInCompactMode,
@@ -130,6 +138,7 @@ extension SettingsBackup {
             windowManagementShowInLauncher: s.windowManagementShowInLauncher,
             windowGap: s.windowGap,
             windowCycleOnRepeat: s.windowCycleOnRepeat,
+            windowLayoutsShowInLauncher: s.windowLayoutsShowInLauncher,
             quicklinksEnabled: s.quicklinksEnabled,
             quicklinksShowInLauncher: s.quicklinksShowInLauncher,
             extensionsShowInLauncher: s.extensionsShowInLauncher,
@@ -178,10 +187,15 @@ extension SettingsBackup {
             uniqueKeysWithValues: hk.boundQuicklinkIDs.compactMap { id in
                 hk.binding(for: .quicklink(id: id)).map { (id.uuidString.lowercased(), $0) }
             })
+        hotkeys.windowLayouts = Dictionary(
+            uniqueKeysWithValues: hk.boundWindowLayoutIDs.compactMap { id in
+                hk.binding(for: .windowLayout(id: id)).map { (id.uuidString.lowercased(), $0) }
+            })
         backup.hotkeys = hotkeys
 
         backup.customCommands = core.customCommands.commands
         backup.quicklinks = core.quicklinks.quicklinks
+        backup.windowLayouts = core.windowLayouts.layouts
         backup.favoriteApps = core.favorites.keys
         backup.hiddenLauncherItems = Array(core.visibility.hiddenItemKeys)
         backup.hiddenLauncherKinds = Array(core.visibility.disabledKinds)
@@ -199,6 +213,11 @@ extension SettingsBackup {
         // Before the hotkeys, so a restored binding has its quicklink to attach to.
         if let quicklinks {
             summary.quicklinks = core.quicklinkCoordinator.replaceQuicklinks(quicklinks)
+        }
+        // Before the hotkeys too, for the same reason: a binding needs its layout to attach to.
+        if let windowLayouts {
+            summary.windowLayouts =
+                core.windowLayoutCoordinator.replaceWindowLayouts(windowLayouts)
         }
         if let hotkeys { summary.hotkeys = applyHotkeys(hotkeys, to: core) }
         if let favoriteApps {
@@ -235,6 +254,10 @@ extension SettingsBackup {
             settings.clipboardDisabledApps = apps
             count += 1
         }
+        if let raw = s.clipboardDefaultAction, let action = ClipboardDefaultAction(rawValue: raw) {
+            settings.clipboardDefaultAction = action
+            count += 1
+        }
         if let launch = s.launchAtLogin {
             settings.launchAtLogin = launch
             count += 1
@@ -261,6 +284,10 @@ extension SettingsBackup {
         }
         if let secs = s.popToRootSeconds, let timeout = PopToRootTimeout(rawValue: secs) {
             settings.popToRootTimeout = timeout
+            count += 1
+        }
+        if let raw = s.escapeKeyBehavior, let behavior = EscapeKeyBehavior(rawValue: raw) {
+            settings.escapeKeyBehavior = behavior
             count += 1
         }
         if let raw = s.appearance, let appearance = AppAppearance(rawValue: raw) {
@@ -330,6 +357,10 @@ extension SettingsBackup {
         }
         if let flag = s.windowCycleOnRepeat {
             settings.windowCycleOnRepeat = flag
+            count += 1
+        }
+        if let flag = s.windowLayoutsShowInLauncher {
+            settings.windowLayoutsShowInLauncher = flag
             count += 1
         }
         if let flag = s.quicklinksEnabled {
@@ -432,6 +463,11 @@ extension SettingsBackup {
         for (rawID, b) in hotkeys.windowCommands ?? [:] {
             guard let id = WindowCommand.ID(rawValue: rawID) else { continue }
             apply(b, .windowCommand(id: id))
+        }
+        for (rawID, b) in hotkeys.windowLayouts ?? [:] {
+            guard let id = UUID(uuidString: rawID), core.windowLayouts.layout(id: id) != nil
+            else { continue }
+            apply(b, .windowLayout(id: id))
         }
         for (rawID, b) in hotkeys.quicklinks ?? [:] {
             guard let id = UUID(uuidString: rawID), core.quicklinks.quicklink(id: id) != nil else {

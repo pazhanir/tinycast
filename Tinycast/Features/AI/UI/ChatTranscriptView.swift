@@ -175,9 +175,17 @@ private struct ChatMessageView: View {
     private var bubbleContent: some View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: Theme.Spacing.sm) {
             if !message.images.isEmpty {
-                HStack(spacing: Theme.Spacing.sm) {
+                // Wider than the stack's own rhythm: two 96pt tiles at `sm` read as one blob.
+                HStack(spacing: Theme.Spacing.xl) {
                     ForEach(message.images, id: \.self) { image in
                         ChatImageThumbnail(image: image, edge: Theme.Size.chatImageThumb)
+                    }
+                }
+            }
+            if !message.documents.isEmpty {
+                HStack(spacing: Theme.Spacing.md) {
+                    ForEach(message.documents, id: \.self) { document in
+                        ChatDocumentChip(document: document)
                     }
                 }
             }
@@ -205,6 +213,29 @@ private struct ChatMessageView: View {
         } else {
             Text(message.text)
         }
+    }
+}
+
+/// A sent document names itself: its bytes went to the model, not into the transcript's prose.
+private struct ChatDocumentChip: View {
+    let document: AIDocument
+
+    private var isPDF: Bool { document.mimeType == AIAttachmentPolicy.pdfMIMEType }
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: isPDF ? "doc.richtext" : "doc.plaintext")
+                .font(Theme.Typography.chip)
+                .symbolRenderingMode(.hierarchical)
+            Text(document.name)
+                .font(Theme.Typography.chip)
+                .lineLimit(1)
+        }
+        .foregroundStyle(Theme.Colors.textSecondary)
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, Theme.Spacing.xxs)
+        .background(Capsule().fill(Theme.Colors.controlSurface))
+        .accessibilityLabel("Attached file \(document.name)")
     }
 }
 

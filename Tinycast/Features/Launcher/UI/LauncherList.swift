@@ -105,7 +105,7 @@ struct LauncherList: View {
         // Publication order, so rows match the flat index.
         let kinds: [AppEntry.Kind] = [
             .meeting, .application, .systemSettings, .extensionCommand, .quicklink, .snippet,
-            .systemAction, .windowCommand, .customCommand, .command
+            .systemAction, .windowLayout, .windowCommand, .customCommand, .command
         ]
         for kind in kinds {
             guard let group = grouped[kind], !group.isEmpty else { continue }
@@ -269,6 +269,10 @@ private struct AppRow: View {
                 }
             }
             Spacer()
+            if let refresh = app.backgroundRefresh {
+                ExtensionRefreshIndicator(state: refresh)
+                    .font(Theme.Typography.rowTrailing)
+            }
             // Holding ⌘ turns the trailing label into the chord that launches this row.
             if let slot, palette.commandHeld {
                 HStack(spacing: Theme.Spacing.xxs) {

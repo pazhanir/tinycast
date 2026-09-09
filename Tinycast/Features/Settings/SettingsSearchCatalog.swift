@@ -155,6 +155,9 @@ enum SettingsSearchCatalog {
             .generalGeneral, "Pop to Root Search",
             keywords: ["reset", "timeout", "back"]),
         .init(
+            .generalGeneral, "Escape Key Behavior",
+            keywords: ["escape", "esc", "back", "close", "navigate"]),
+        .init(
             .generalGeneral, "Auto-switch input source",
             keywords: ["keyboard", "layout", "language", "abc"])
     ]
@@ -202,7 +205,10 @@ enum SettingsSearchCatalog {
             keywords: ["script", "shell"]),
         .init(
             .commandsCustomCommands, "Add Custom Command",
-            keywords: ["new", "script", "shell", "shortcut"])
+            keywords: ["new", "script", "shell", "shortcut"]),
+        .init(
+            .commandsCustomCommands, "Import Raycast Scripts",
+            keywords: ["raycast", "script", "folder", "directory", "migrate"])
     ]
 
     private static let quicklinks: [SettingsSearchEntry] = [
@@ -350,7 +356,7 @@ enum SettingsSearchCatalog {
     private static let windowManagement: [SettingsSearchEntry] = [
         .init(
             pane: .windowManagement,
-            keywords: ["tile", "halves", "thirds", "maximize", "snap"]),
+            keywords: ["tile", "halves", "thirds", "maximize", "snap", "layouts", "arrangement"]),
         .init(
             .windowManagementWindowManagement, "Enable window management",
             keywords: ["tile", "accessibility"]),
@@ -362,7 +368,22 @@ enum SettingsSearchCatalog {
             keywords: ["padding", "spacing", "margin", "points"]),
         .init(
             group: .windowManagementOptions, "Window commands",
-            keywords: ["shortcut", "left half", "maximize", "center"])
+            keywords: ["shortcut", "left half", "maximize", "center"]),
+        .init(
+            group: .windowManagementLayouts, "Window Layouts",
+            keywords: [
+                "layout", "arrangement", "workspace", "preset", "restore windows",
+                "multi display", "monitor"
+            ]),
+        .init(
+            .windowManagementLayouts, "Show layouts in launcher",
+            keywords: ["hide", "visibility", "search"]),
+        .init(
+            .windowManagementLayouts, "New Layout",
+            keywords: ["add", "create", "arrangement", "preset"]),
+        .init(
+            .windowManagementLayouts, "Create Layout from Current Windows",
+            keywords: ["capture", "snapshot", "current", "save arrangement"])
     ]
 
     private static let clipboard: [SettingsSearchEntry] = [
@@ -378,6 +399,9 @@ enum SettingsSearchCatalog {
         .init(
             .clipboardHistory, "Keep history for",
             keywords: ["retention", "delete", "privacy", "expire"]),
+        .init(
+            .clipboardHistory, "Default action",
+            keywords: ["enter", "return", "paste", "copy", "primary"]),
         .init(
             group: .clipboardDisabledApplications, "Disabled Applications",
             keywords: ["exclude", "password manager", "ignore", "privacy"]),

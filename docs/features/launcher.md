@@ -34,8 +34,9 @@ earliest scope wins).
 
 ## Search scopes
 
-`SearchScopes` (`Launcher/Model/SearchScopes.swift`) owns the paths; the list is user-editable in General
-Settings and persisted as `AppSettings.searchScopes`. A scope is either a directory or a single `.app`
+`SearchScopes` (`Launcher/Model/SearchScopes.swift`) owns the paths; the list is user-editable in
+Settings → Applications → Search Scopes and persisted as `AppSettings.searchScopes`.
+A scope is either a directory or a single `.app`
 bundle, stored tilde-abbreviated so the UI reads cleanly and a settings backup stays portable.
 
 Enumeration descends **one subfolder deep** — a scope's own `.app` children, plus any inside an
@@ -266,10 +267,11 @@ order name a live row across a rename or a reinstall.
 
 **A quicklink earns a fallback row by declaring a placeholder**, nothing else —
 `QuicklinkDestination.containsPlaceholder`. `openQuicklink(id:filling:)` assigns the query to the
-first *real* missing argument and leaves the rest to the argument form, which opens pre-filled
-through `QuicklinkArgumentSession.begin(values:)`. The seed never fills the **selection** prompt:
-that one is not an `{argument}` and is resolved by replacing the context, so seeding it through
-`userArguments` would silently do nothing.
+first declared argument and opens at once when that was the only one owed; anything still missing
+sends the row to Search Quicklinks with its header fields pre-filled (see
+[quicklinks.md](quicklinks.md#arguments)). The seed never fills the **selection** field: that one is
+not an `{argument}` and is resolved by replacing the context, so seeding it through `userArguments`
+would silently do nothing.
 
 **Run Shell Command carries its own switch, not the custom-command library's.** Turning off Custom
 Commands hides a library of saved commands; it says nothing about a shell line someone types
@@ -469,6 +471,14 @@ Settings › Window Management rather than a launcher-category pane of their own
 made for snippets. The feature ships off. See
 [window-management.md](window-management.md).
 
+## Window layouts
+
+`WindowLayoutStore` supplies its slice the way custom commands do, sorted by name, published
+immediately **before** the window commands so the two read as one family. Their per-layout shortcut
+and launcher checkbox live in Settings › Window Management beside the commands', and
+`windowLayoutsShowInLauncher` takes the section and its two commands out together. See
+[window-layouts.md](window-layouts.md).
+
 ## Quicklinks
 
 `QuicklinkStore` supplies its slice the same way custom commands do, sorted pinned-first then
@@ -569,7 +579,10 @@ rather than a slot, so no favorite loses its digit to the overflow.
 
 Holding ⌘ swaps each numbered row's kind label for its chord. `PalettePanel` publishes the modifier
 into `PaletteState.commandHeld` from `.flagsChanged` and clears it in `resignKey` — not in `prepare`,
-which a re-show that preserves state skips entirely. **`AppRow` observes that flag itself**: reading
+which a re-show that preserves state skips entirely. The flag flips **400 ms after** the press, not
+on it: every ⌘ chord in the palette starts as a ⌘ press, so revealing on the down edge flashed the
+numbering under ⌘↵ and ⌘K. `noteCommandHeld` schedules the reveal and any release cancels it, so a
+chord's own tap never outlives its keystroke while a deliberate hold still lights every row. **`AppRow` observes that flag itself**: reading
 it any higher would attach it to `RootPaletteView`'s body and rebuild the whole palette on every ⌘
 press, where a row-level read re-runs only the handful of rows the `LazyVStack` has realized. The
 digit each row shows is carried on its `Row` case from the section build, so no row searches for its
