@@ -64,6 +64,9 @@ for the shared board. Its scratch tree lives under `temporaryDirectory`, which i
 root, so the cases about *reading* files inject an empty root list and the one case about durability
 is the one that runs against the shipped roots. Both file URL and legacy filename boards also cover
 the capture cap, exact ordering, rejected prefixes, duplicates and symlinks using private fixtures.
+The reader cases add the limit boundaries, the predicate call counts and modern/legacy precedence.
+Note that macOS synthesizes `public.file-url` items for any `NSFilenamesPboardType` write, so a
+legacy fixture still exercises the modern representation and the fallback branch stays unreached.
 
 Never join a compile to its run with `&&` in a `set -e` script. `set -e` is specified to ignore a
 failing command in a non-final AND-OR list member, so `swiftc … && /tmp/x` swallows a compile error and
@@ -192,6 +195,10 @@ search result that navigates and then sits there.
 `UninstallScanner.measure`, `FileSearchService.search`, and `Notes.search`. Open the Time Profiler or
 `os_signpost` instrument in Instruments and filter to that subsystem; nothing needs recompiling.
 
+None of the benchmarks below join the suite, so each is registered in `run-tests.sh` as `run index`
+instead: `--index` hands it editor flags without queueing it, and without that entry nothing in the
+file resolves. Keep the entry's source list matching the command beside it.
+
 Run the real Spotlight-backed file-search benchmark separately from the deterministic harnesses:
 
 ```sh
@@ -223,8 +230,9 @@ iteration count for timings, or `--probe` to diff every chunk between two builds
 
 `Tests/clipboard-file-performance.swift` measures file capture with private pasteboards and temporary
 fixtures. It reports wall and process CPU time as JSON for modern and legacy formats, including
-32/1,000/10,000 durable files and rejected-input controls. Keep it outside `run-tests.sh`; compare
-three fresh processes per build with identical `-O` settings:
+32/1,000/10,000 durable files, rejected-input controls and an uncapped-reader control that guards
+the attachment path against the bounded reader it now delegates to. Compare three fresh processes
+per build with identical `-O` settings:
 
 ```sh
 swiftc -O -swift-version 6 Tinycast/Platform/PasteboardFiles.swift \
@@ -436,6 +444,8 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 
 - With Calendar **off**: no launcher entries, no card, no permission prompt at launch
 - Enabling shows the consent dialog **before** the macOS prompt; declining prompts for nothing
+- After Calendar permission is reset, Settings ▸ Calendar offers `Allow Calendar Access…` and asks
+  again; after denial it offers System Settings instead
 - With a meeting four minutes out, an empty palette shows the card on top, provider glyph and all
 - The countdown steps on the minute boundary rather than on a keystroke
 - ↵ joins: a Zoom link opens the Zoom app, and the browser where no app claims the scheme
